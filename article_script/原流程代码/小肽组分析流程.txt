@@ -1,0 +1,783 @@
+#-----------------------------------------------------------------------------------------------------------
+#----------------------------------           建                         库           -----------------------------------
+#-----------------------------------------------------------------------------------------------------------
+
+#-------------------------------------------思路------------------------------------------------------------
+本次建库参考吴刘记文章的方法，首先拿到基因组文件，然后使用碱基C替换掉基因组文件中的N序列。之后
+对基因组文件中的序列名称进行简化和替换。由于在实践过程中发现六框翻译后反向编码序列跟编码方式很
+难对应起来，所以采用对原基因组文件反向互补，然后和正向序列一起使用transeq进行六框翻译，对翻译
+结果按照Frame和染色体进行排序，删除正向序列和反向序列翻译结果中的Frame=4，5，6的部分，之后进行
+序列分隔，基因组位置定位，删除片段长度小于5的序列。
+
+# 下载基因组文件之后用C替换基因组文件中的N
+
+#-----------------------------------------------获得基因组的反向互补序列---------------------------------------反向序列
+# 输入和输出文件名
+input_file = "/Users/lemon/Desktop/Eu_genome.fa"
+output_file = "/Users/lemon/Desktop/Eu_genome_reverse.fa"
+
+# 读取输入文件，找到每个序列的反向序列
+sequences = {}
+current_id = None
+current_sequence = ""
+with open(input_file, "r") as input_handle:
+    for line in input_handle:
+        line = line.strip()
+        if line.startswith(">"):
+            # 如果当前序列不是第一个序列，则保存前一个序列的反向序列
+            if current_id:
+                sequences[current_id] = current_sequence[::-1]
+            # 更新当前ID和序列
+            current_id = line
+            current_sequence = ""
+        else:
+            # 如果是序列数据行，则将数据添加到当前序列中
+            current_sequence += line
+    # 保存最后一个序列的反向序列
+    if current_id:
+        sequences[current_id] = current_sequence[::-1]
+# 输出反向序列到新的文件
+with open(output_file, "w") as output_handle:
+    for seq_id, sequence in sequences.items():
+        output_handle.write(seq_id + "\n")
+        # 每行输出不超过100个碱基
+        for i in range(0, len(sequence), 100):
+            output_handle.write(sequence[i:i+100] + "\n")
+print("反向序列完成，结果保存在", output_file)
+# 获取反向序列的互补序列
+# 输入和输出文件名
+input_file = "/Users/lemon/Desktop/Eu_genome_reverse.fa"
+output_file = "/Users/lemon/Desktop/Eu_genome_reverse_comp.fa"
+# 定义一个函数，计算DNA序列的互补序列
+def complement_sequence(dna_sequence):
+    complement = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G','a': 't', 't': 'a', 'g': 'c', 'c': 'g'}
+    return ''.join(complement[base] for base in dna_sequence)
+# 读取输入文件，找到每个序列的互补序列，并输出到新的文件中
+with open(input_file, "r") as input_handle, open(output_file, "w") as output_handle:
+    current_id = None
+    current_sequence = ""
+    for line in input_handle:
+        line = line.strip()
+        if line.startswith(">"):
+            # 如果当前序列不是第一个序列，则写入前一个序列的互补序列
+            if current_id:
+                output_handle.write(current_id + "\n")
+                # 计算互补序列并每行不超过100个碱基
+                complement_seq = complement_sequence(current_sequence)
+                for i in range(0, len(complement_seq), 100):
+                    output_handle.write(complement_seq[i:i+100] + "\n")
+            # 更新当前ID和序列
+            current_id = line
+            current_sequence = ""
+        else:
+            # 如果是序列数据行，则将数据添加到当前序列中
+            current_sequence += line
+    # 处理最后一个序列
+    if current_id:
+        output_handle.write(current_id + "\n")
+        # 计算互补序列并每行不超过100个碱基
+        complement_seq = complement_sequence(current_sequence)
+        for i in range(0, len(complement_seq), 100):
+            output_handle.write(complement_seq[i:i+100] + "\n")
+
+print("互补序列完成，结果保存在", output_file)
+
+#----------------------------------------------------EMBOSS安装------------------------------------------------
+# 环境：CentOS 7 
+# 检查系统标识位和依赖项
+sudo yum update #centos 系统采用yum
+sudo yum install perl
+suod yum install gcc
+
+# 下载emboss安装包
+
+# 解压emboss安装包
+tar -xzvf /home/lemon/下载/EMBOSS-6.6.0.tar.gz # 遇到No such file or directory，采用绝对路径
+sudo tar -xzvf /home/lemon/下载/EMBOSS-6.6.0.tar.gz
+cd /home/lemon/EMBOSS-6.6.0
+
+# 编译和安装
+./configure
+make
+sudo make install
+
+# 查看版本信息，如果输出则表示安装成功
+seqret -version
+
+# 切换至root用户
+su root
+
+#-----------------------------------------------------------------------------------------------------------
+#-------------------------------------           结    果    鉴    定           ------------------------------------
+#-----------------------------------------------------------------------------------------------------------
+# # ----------------提取intron信息--------------------
+# import pandas as pd
+# # 读取Excel文件中的数据
+# file_path = '/Users/lemon/Desktop/Eu_chr_gff.xlsx'
+# mRNA_df = pd.read_excel(file_path, sheet_name='Eu_mRNA')
+# exon_df = pd.read_excel(file_path, sheet_name='Eu_exon')
+# # 创建一个新的DataFrame用于存储结果
+# output_df = pd.DataFrame(columns=['accession', 'type', 'start', 'end', 'strand'])
+# # 获取唯一的accession值
+# accession_values = mRNA_df['accession'].unique()
+# # 处理每个accession
+# for accession in accession_values:
+#     # 获取相同accession和strand的mRNA数据
+#     mRNA_data = mRNA_df[mRNA_df['accession'] == accession]
+#     for strand in mRNA_data['strand'].unique():
+#         mRNA_strand_data = mRNA_data[mRNA_data['strand'] == strand]
+#         # 合并mRNA的start和end数据
+#         mRNA_ranges = []
+#         for _, row in mRNA_strand_data.iterrows():
+#             mRNA_ranges.append((row['start'], row['end']))
+#         # 获取相同accession和strand的exon数据
+#         exon_strand_data = exon_df[(exon_df['accession'] == accession) & (exon_df['strand'] == strand)]
+#         # 合并exon的start和end数据
+#         exon_ranges = []
+#         for _, row in exon_strand_data.iterrows():
+#             exon_ranges.append((row['start'], row['end']))
+#         # 找出mRNA数据中不包含exon数据的部分
+#         for mRNA_start, mRNA_end in mRNA_ranges:
+#             current_start = mRNA_start
+#             for exon_start, exon_end in exon_ranges:
+#                 if exon_start > mRNA_end or exon_end < mRNA_start:
+#                     continue
+#                 if current_start < exon_start:
+#                     new_row = {
+#                         'accession': accession,
+#                         'type': 'intron',
+#                         'start': current_start,
+#                         'end': exon_start - 1,
+#                         'strand': strand
+#                     }
+#                     output_df = pd.concat([output_df, pd.DataFrame([new_row])], ignore_index=True)
+#                 current_start = exon_end + 1
+#             if current_start <= mRNA_end:
+#                     new_row = {
+#                         'accession': accession,
+#                         'type': 'intron',
+#                         'start': current_start,
+#                         'end': mRNA_end,
+#                         'strand': strand
+#                     }
+#                     output_df = pd.concat([output_df, pd.DataFrame([new_row])], ignore_index=True)
+# # 输出结果到一个新的Excel文件
+# output_file_path = '/Users/lemon/Desktop/intron.xlsx'
+# output_df.to_excel(output_file_path, index=False)
+# print(f"Results have been saved to {output_file_path}")
+
+# ------------------提取intergenic信息------------------------
+# import pandas as pd
+# # 读取Excel文件中的数据
+# file_path = '/Users/lemon/Desktop/Eu_chr_gff.xlsx'
+# mRNA_df = pd.read_excel(file_path, sheet_name='Eu_mRNA')
+# # 创建一个新的DataFrame用于存储结果
+# output_df = pd.DataFrame(columns=['accession', 'strand', 'start', 'end'])
+# # 获取唯一的accession值
+# accession_values = mRNA_df['accession'].unique()
+# # 处理每个accession
+# for accession in accession_values:
+#     # 获取相同accession和strand的mRNA数据
+#     mRNA_data = mRNA_df[mRNA_df['accession'] == accession]
+#     for strand in mRNA_data['strand'].unique():
+#         mRNA_strand_data = mRNA_data[mRNA_data['strand'] == strand]
+#         # 对start和end进行排序
+#         mRNA_strand_data = mRNA_strand_data.sort_values(by='start')
+#         # 获取相邻区间的间隔部分
+#         for i in range(len(mRNA_strand_data) - 1):
+#             current_end = mRNA_strand_data.iloc[i]['end']
+#             next_start = mRNA_strand_data.iloc[i + 1]['start']
+#             if current_end + 1 < next_start:
+#                 new_row = {
+#                     'accession': accession,
+#                     'strand': strand,
+#                     'start': current_end + 1,
+#                     'end': next_start - 1
+#                 }
+#                 output_df = pd.concat([output_df, pd.DataFrame([new_row])], ignore_index=True)
+#
+# # 输出结果到一个新的Excel文件
+# output_file_path = '/Users/lemon/Desktop/intergenic.xlsx'
+# output_df.to_excel(output_file_path, index=False)
+#
+# print(f"Results have been saved to {output_file_path}")
+
+# 搜库文件前期处理
+1.筛选出位于染色体的肽段；2.将蛋白库搜库文件和小肽库搜库文件整理为.fa文件，获得各个肽段的信息，对于小肽库搜库结果，筛选重复序列小于10的肽段作为最终的肽段；3.对于无法定位的肽段摘除记录出来，并将定位的肽段整理出来；4.对蛋白库和小肽库文件取交集，得到Peptid_unique
+
+# 提取注释文件中基因组注释交叉的部分
+# import pandas as pd
+# # 读取Excel文件中的数据
+# file_path = '/Users/lemon/Desktop/TKS_gff.xlsx'
+# mRNA_df = pd.read_excel(file_path, sheet_name='TKS_gff_mRNA')
+# # 创建数据框存储结果
+# output_df1 = pd.DataFrame(columns=['accession', 'strand', 'start', 'end'])
+# output_df2 = pd.DataFrame(columns=['accession', 'strand', 'start', 'end'])
+# # 获取accession值
+# accession_values = mRNA_df['accession'].unique()
+# # 处理每个accession
+# for accession in accession_values:
+#     # 获取相同accession和strand的mRNA数据
+#     mRNA_data = mRNA_df[mRNA_df['accession'] == accession]
+#     for strand in mRNA_data['strand'].unique():
+#         mRNA_strand_data = mRNA_data[mRNA_data['strand'] == strand]
+#         # 对start和end进行排序
+#         mRNA_strand_data = mRNA_strand_data.sort_values(by='start')
+#         # 判断包含区域
+#         for i in range(len(mRNA_strand_data)):
+#             current_start = mRNA_strand_data.iloc[i]['start']
+#             current_end = mRNA_strand_data.iloc[i]['end']
+#
+#             if i < len(mRNA_strand_data)  - 1:
+#                 next_start = mRNA_strand_data.iloc[i + 1]['start']
+#                 next_end = mRNA_strand_data.iloc[i + 1]['end']
+#
+#                 if (current_start < next_start < next_end < current_end):
+#                     row_true = {
+#                         'accession': accession,
+#                         'strand': strand,
+#                         'start': next_start,
+#                         'end': next_end,
+#                     }
+#                     row_false = {
+#                         'accession': accession,
+#                         'strand': strand,
+#                         'start': current_start,
+#                         'end': current_end
+#                     }
+#                     output_df1 = pd.concat([output_df1, pd.DataFrame([row_true])], ignore_index=True)
+#                     output_df2 = pd.concat([output_df2, pd.DataFrame([row_false])], ignore_index=True)
+#
+# output_file_path = '/Users/lemon/Desktop/TKS_mRNA.xlsx'
+# with pd.ExcelWriter(output_file_path) as writer:
+#     output_df1.to_excel(writer, index=False, sheet_name='true')
+#     output_df2.to_excel(writer, index=False, sheet_name='false')
+# print(f"reslut have been saved to {output_file_path}")
+
+# # 提取包含在其他基因区域内的两个gene的部分的数据
+# import pandas as pd
+# # 读取Excel文件中的两个表格
+# file_path = ('/Users/lemon/Desktop/TKS_gff.xlsx')
+# TKS_gff = pd.read_excel(file_path, sheet_name='TKS_gff')
+# TKS_gff_mRNA = pd.read_excel(file_path, sheet_name='TKS_gff_mRNA')
+# # 结果数据框
+# result_df = pd.DataFrame()
+#
+# # 遍历第二个表格中的每一行
+# for index, row in TKS_gff_mRNA.iterrows():
+#     accession = row['accession']
+#     strand = row['strand']
+#     start = row['start']
+#
+#     # 查找第一个表格中符合条件的行
+#     match = TKS_gff[(TKS_gff['accession'] == accession) &
+#                     (TKS_gff['strand'] == strand) &
+#                     (TKS_gff['start'] == start) &
+#                     (TKS_gff['type'] == 'mRNA')]
+#
+#     if not match.empty:
+#         # 找到匹配行的索引
+#         match_index = match.index[0]
+#         # 从匹配行开始，找到下一个type为gene的行的索引
+#         for i in range(match_index + 1, len(TKS_gff)):
+#             if TKS_gff.at[i, 'type'] == 'mRNA':
+#                 end_index = i - 1
+#                 break
+#         else:
+#             end_index = len(TKS_gff) - 1
+#         # 提取从匹配行到下一个gene行的前一行的数据
+#         subset = TKS_gff.loc[match_index:end_index]
+#         # 将提取的数据追加到结果数据框中
+#         result_df = pd.concat([result_df, subset], ignore_index=True)
+# # 将结果数据框写入新的Excel文件
+# result_file_path = '/Users/lemon/Desktop/TKS_gff_get.xlsx'
+# result_df.to_excel(result_file_path, index=False)
+
+# --------------------------------------------------Pepteide文件处理-------------------------------------------------
+# # Peptide搜库结果序列定位
+# from Bio import SeqIO
+# def retrieve_sequence(file1, file2, output_file):
+#     sequence_map = {}
+#     with open(file2, "r") as f2:
+#         for record in SeqIO.parse(f2, "fasta"):
+#             sequence_id =record.id.split()[0]
+#             description = record.description
+#             sequence = str(record.seq)
+#             sequence_map[sequence_id] = (description, sequence)
+#     # 在第一个文件中检索对应的序列，并输出到新文件中
+#     with open(output_file, "w") as out_file:
+#         with open(file1, "r") as f1:
+#             for record in SeqIO.parse(f1, "fasta"):
+#                 sequence_id = record.id.split()[0]
+#                 if sequence_id in sequence_map:
+#                     file1_sequence = str(record.seq)
+#                     description, sequence = sequence_map[sequence_id]
+#                     index = sequence.find(file1_sequence)
+#                     if index != -1:
+#                         # 找到匹配位置
+#                         start_positions = index
+#                         end_positions = index + len(file1_sequence) - 1
+#                         start_position_info = f"{start_positions}"
+#                         end_position_info = f"{end_positions}"
+#                         out_file.write(f">{description} Start_Position = {start_position_info} End_Position = {end_position_info}\n")
+#                         out_file.write(f"{file1_sequence}\n")
+# # 示例
+# file2 = "D:/桌面/Eu_peptide_database_customized.fa"
+# file1 = "D:/桌面/Eu_peptide.fasta"
+# output_file = "D:/桌面/output_file.fasta"
+# retrieve_sequence(file1, file2, output_file)
+
+# # 提取基因组染色体长度
+# import pandas as pd
+# import re
+# def extract_sequence_lengths(genome_file):
+#     # 读取基因组文件，提取序列ID和长度信息
+#     sequence_lengths = {}
+#     with open(genome_file, 'r') as f:
+#         for line in f:
+#             if line.startswith('>'):
+#                 sequence_id = line.strip().split()[0][1:]
+#                 match = re.search(r'Len=(\d+)', line)
+#                 if match:
+#                     sequence_length = int(match.group(1))
+#                     sequence_lengths[sequence_id] = sequence_length
+#     return sequence_lengths
+# def add_sequence_lengths_to_all_sheets(genome_file, excel_file, output_file):
+#     # 读取序列长度信息
+#     sequence_lengths = extract_sequence_lengths(genome_file)
+#     # 读取Excel文件中的所有工作表
+#     xl = pd.ExcelFile(excel_file)
+#     # 用于存储所有更新后的DataFrame
+#     with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
+#         # 逐个处理工作表
+#         for sheet_name in xl.sheet_names:
+#             df = xl.parse(sheet_name)
+#             if 'Chrom' in df.columns:
+#                 # 将序列长度信息添加到工作表中
+#                 df['Length'] = df['Chrom'].map(sequence_lengths)
+#             else:
+#                 print(f"Warning: 'Chrom' column not found in sheet '{sheet_name}'")
+#             # 写入新的工作表到输出文件
+#             df.to_excel(writer, sheet_name=sheet_name, index=False)
+# # 示例文件和输出路径
+# genome_file = "D:/桌面/Eu_genome.fasta"
+# excel_file = "D:/桌面/test.xlsx"
+# output_file = "D:/桌面/updated_sequences_all_sheets.xlsx"
+# add_sequence_lengths_to_all_sheets(genome_file, excel_file, output_file)
+
+# # 将序列位置信息匹配到原始数据中的其他信息
+# import pandas as pd
+# def filter_and_save_data(file1, sheet_name1, sheet_names2, output_same_base, output_different_base):
+#     # 读取第一个Excel文件的指定表格
+#     df1 = pd.read_excel(file1, sheet_name=sheet_name1)
+#     for sheet_name2 in sheet_names2:
+#         # 读取第二个Excel文件的指定表格
+#         df2 = pd.read_excel(file1, sheet_name=sheet_name2)
+#         # 合并两个数据框，根据特定列找出相同和不同的数据行
+#         merged = pd.merge(df1, df2, on=['Sequence', 'Accessions', 'Material'], how='outer', indicator=True)
+#         # 筛选出相同的数据行
+#         same_rows = merged[merged['_merge'] == 'both'].drop(columns=['_merge'])
+#         # 筛选出不同的数据行
+#         different_rows = merged[merged['_merge'] != 'both'].drop(columns=['_merge'])
+#         # 生成相应的输出文件路径
+#         output_same = f"{output_same_base}_{sheet_name2}.xlsx"
+#         output_different = f"{output_different_base}_{sheet_name2}.xlsx"
+#         # 将相同的数据行和不同的数据行分别保存到两个新的Excel文件中
+#         same_rows.to_excel(output_same, index=False)
+#         different_rows.to_excel(output_different, index=False)
+# # 示例使用
+# file1 = "D:/桌面/Eu_peptide.xlsx"
+# sheet_name1 = "Eu_pep"  # 第一个Excel文件中的表格名称
+# sheet_names2 = ["gen", "guo", "pi", "ye"]  # 第二个Excel文件中的多个表格名称
+# output_same_base = "D:/桌面/output_same"
+# output_different_base = "D:/桌面/output_different"
+# filter_and_save_data(file1, sheet_name1, sheet_names2, output_same_base, output_different_base)
+
+# # 定位基因组中N序列位置
+# import pandas as pd
+# def count_N_lengths(input_file):
+#     n_lengths = {}  # 用字典存储不同长度的N序列出现次数
+#     n_details = []  # 用于存储N序列的详细信息
+#     current_length = 0  # 当前N序列的长度
+#     current_seq_name = ""  # 当前序列的名称
+#     current_start_pos = 0  # 当前N序列的起始位置
+#     current_pos = 0  # 当前碱基的位置
+#     with open(input_file, 'r') as f:
+#         for line in f:
+#             if line.startswith(">"):  # 如果是序列标识行
+#                 current_seq_name = line.strip()
+#                 current_pos = 0
+#             else:
+#                 line = line.strip()
+#                 for base in line:
+#                     if base.upper() == "N":  # 如果是N
+#                         if current_length == 0:
+#                             current_start_pos = current_pos  # 记录N序列的起始位置
+#                         current_length += 1
+#                     elif current_length > 0:  # 如果不是N，且当前有N序列
+#                         # 更新字典中N序列的长度出现次数
+#                         if current_length in n_lengths:
+#                             n_lengths[current_length] += 1
+#                         else:
+#                             n_lengths[current_length] = 1
+#                         # 记录N序列的详细信息
+#                         n_details.append([current_seq_name, current_start_pos, current_length])
+#                         current_length = 0  # 重置当前N序列的长度
+#                     current_pos += 1
+#         # 处理文件末尾可能存在的N序列
+#         if current_length > 0:
+#             if current_length in n_lengths:
+#                 n_lengths[current_length] += 1
+#             else:
+#                 n_lengths[current_length] = 1
+#             n_details.append([current_seq_name, current_start_pos, current_length])
+#     return n_lengths, n_details
+# def main():
+#     input_file = "D:/桌面/Eu_genome.fasta"
+#     n_lengths, n_details = count_N_lengths(input_file)
+#     # 打印N序列长度分布
+#     print("N序列出现的长度分布:")
+#     for length, count in sorted(n_lengths.items()):
+#         print(f"长度为 {length} 的N序列出现次数: {count}")
+#     # 创建DataFrame并写入Excel文件
+#     df = pd.DataFrame(n_details, columns=["序列名称", "N序列起始位置", "N序列长度"])
+#     output_file = "D:/桌面/Eu_genome_record.xlsx"
+#     df.to_excel(output_file, index=False)
+#     print(f"N序列详细信息已写入 {output_file}")
+# if __name__ == "__main__":
+#     main()
+
+# # 将数据中N序列对应位置的肽段过滤掉
+# import pandas as pd
+# # 读取Excel文件
+# file1 = pd.read_excel('D:/桌面/Eu_peptide.xlsx', sheet_name='Eu_pep_chr_matched')
+# file2 = pd.read_excel('D:/桌面/Eu_genome_record.xlsx')
+# # 定义一个函数来检查是否在指定范围内（包括部分重叠的情况）
+# def is_overlapping(row, ranges):
+#     chrom = row['Chrom']
+#     start = row['Start']
+#     end = row['End']
+#     for _, range_row in ranges.iterrows():
+#         if chrom == range_row['Chrom']:
+#             range_start = range_row['Start']
+#             range_end = range_row['End']
+#             if not (end < range_start or start > range_end):
+#                 return True
+#     return False
+# # 过滤第一个文件中的数据
+# file1['is_overlapping'] = file1.apply(lambda row: is_overlapping(row, file2), axis=1)
+# # 分离数据
+# filtered_data = file1[~file1['is_overlapping']].drop(columns=['is_overlapping'])
+# removed_data = file1[file1['is_overlapping']].drop(columns=['is_overlapping'])
+# # 将过滤后的数据和被过滤掉的数据分别保存到新的Excel文件中
+# filtered_data.to_excel('D:/桌面/filtered_data.xlsx', index=False)
+# removed_data.to_excel('D:/桌面/removed_data.xlsx', index=False)
+
+# ---------------------------------------------Protein文件处理----------------------------------------------------------
+# # Protein搜库结果序列定位
+# from Bio import SeqIO
+# # 解析位置信息
+# def parse_positions(description):
+#     position_part = description.split("Position=")[1]
+#     ranges_part = position_part.split(": ")[1]
+#     ranges = ranges_part.split(", ")
+#     direction = (position_part.split(": ")[-1]).split("	")[0]
+#     positions = []
+#     for r in ranges:
+#         start, end = map(int, r.split('-'))
+#         positions.append((start, end))
+#     return positions, direction
+# # 将序列位置映射到数字
+# def map_positions(sequence, positions, direction):
+#     mapped_positions = []
+#     position_list = []
+#     for start, end in positions:
+#         position_list.extend(range(start, end + 1))
+#     if direction == '+':
+#         for i, char in enumerate(sequence):
+#             mapped_positions.append((char, position_list[i * 3:i * 3 + 3]))
+#     else:
+#         position_list = position_list[::-1]
+#         for i, char in enumerate(sequence):
+#             mapped_positions.append((char, position_list[i * 3:i * 3 + 3]))
+#     return mapped_positions
+# def retrieve_sequences(file1, file2, output_file_matched, output_file_unmatched):
+#     # 读取第二个文件，建立序列ID和序列片段的映射关系
+#     sequence_map = {}
+#     with open(file2, "r") as f2:
+#         for record in SeqIO.parse(f2, "fasta"):
+#             sequence_id = record.id.split()[0]
+#             description = record.description
+#             sequence = str(record.seq)
+#             positions, direction = parse_positions(description)
+#             mapped_positions = map_positions(sequence, positions, direction)
+#             sequence_map[sequence_id] = (description, sequence, mapped_positions)
+#     # 在第一个文件中检索对应的序列，并输出到新文件中
+#     with open(output_file_matched, "w") as out_file_matched, open(output_file_unmatched, "w") as out_file_unmatched:
+#         with open(file1, "r") as f1:
+#             for record in SeqIO.parse(f1, "fasta"):
+#                 sequence_id = record.id.split()[0]
+#                 if sequence_id in sequence_map:
+#                     file1_sequence = str(record.seq)
+#                     description, sequence, mapped_positions = sequence_map[sequence_id]
+#                     index = sequence.find(file1_sequence)
+#                     if index != -1:
+#                         # 找到匹配位置
+#                         start_positions = mapped_positions[index][1]
+#                         end_positions = mapped_positions[index + len(file1_sequence) - 1][1]
+#                         start_position_info = f"{start_positions[0]}/{start_positions[1]}/{start_positions[2]}"
+#                         end_position_info = f"{end_positions[-3]}/{end_positions[-2]}/{end_positions[-1]}"
+#                         out_file_matched.write(f">{description} Start_Position={start_position_info} End_Position={end_position_info}\n")
+#                         out_file_matched.write(f"{file1_sequence}\n")
+#                     else:
+#                         out_file_unmatched.write(f">{record.description}\n")
+#                         out_file_unmatched.write(f"{file1_sequence}\n")
+#                 else:
+#                     out_file_unmatched.write(f">{record.description}\n")
+#                     out_file_unmatched.write(f"{str(record.seq)}\n")
+# # 使用示例
+# file1 = "D:\桌面\Eu_pro_ye.fasta"
+# file2 = "D:\桌面\Eu_peptide_database.fa"
+# output_file_matched = "D:\桌面\output_matched.fa"
+# output_file_unmatched = "D:\桌面\output_unmatched.fa"
+# retrieve_sequences(file1, file2, output_file_matched, output_file_unmatched)
+
+# # 提取的定位到的Pro文件的数据并合并
+# import pandas as pd
+# def filter_and_save_data(file1, file2, sheet_name1, sheet_name2, output_same, output_different):
+#     # 读取两个Excel文件的指定表格
+#     df1 = pd.read_excel(file1, sheet_name=sheet_name1)
+#     df2 = pd.read_excel(file2, sheet_name=sheet_name2)
+#     # 合并两个数据框，根据特定列找出相同和不同的数据行
+#     merged = pd.merge(df1, df2, on=['Material', 'Accessions', 'Sequence'], how='outer', indicator=True)
+#     # 筛选出相同的数据行
+#     same_rows = merged[merged['_merge'] == 'both'].drop(columns=['_merge'])
+#     # 筛选出不同的数据行
+#     different_rows = merged[merged['_merge'] != 'both'].drop(columns=['_merge'])
+#     # 将相同的数据行和不同的数据行分别保存到两个新的Excel文件中
+#     same_rows.to_excel(output_same, index=False)
+#     different_rows.to_excel(output_different, index=False)
+# # 示例使用
+# file1 = "D:/桌面/Eu_ye_protein.xlsx"
+# file2 = "D:/桌面/Eu_protein.xlsx"
+# sheet_name1 = "Eu_ye_matched"  # 第一个Excel文件中的表格名称
+# sheet_name2 = "Eu_pro"  # 第二个Excel文件中的表格名称
+# output_same = "D:/桌面/ye_output_same.xlsx"
+# output_different = "D:/桌面/ye_output_different.xlsx"
+#
+# filter_and_save_data(file1, file2, sheet_name1, sheet_name2, output_same, output_different)
+
+# --------------------------------------------------CP&NCP筛选部分-------------------------------------------------
+# 筛选仅仅小肽数据库中鉴定到的肽段
+# import pandas as pd
+# # 读取Excel文件中的数据
+# file1_path = 'D:/桌面/Eu_protein.xlsx'
+# file2_path = 'D:/桌面/Eu_peptide.xlsx'
+# file1_df = pd.read_excel(file1_path, sheet_name='Eu_pro_matched_chr')
+# file2_df = pd.read_excel(file2_path, sheet_name='Eu_pep_chr_matched_keep')
+# # 根据 Sequence, GeneID 和 Strand 进行匹配
+# merged_df = pd.merge(file2_df, file1_df[['Material', 'Sequence', 'Start', 'End']], on=['Material', 'Sequence', 'Start', 'End'], how='left', indicator=True)
+# # 筛选出匹配和不匹配的行
+# matched_df = merged_df[merged_df['_merge'] == 'both'].drop(columns=['_merge'])
+# unmatched_df = merged_df[merged_df['_merge'] == 'left_only'].drop(columns='_merge')
+# # 输出结果到新的Excel文件
+# matched_output_path = 'D:/桌面/matched.xlsx'
+# unmatched_output_path = 'D:/桌面/unmatched.xlsx'
+# matched_df.to_excel(matched_output_path, index=False)
+# unmatched_df.to_excel(unmatched_output_path, index=False)
+# print(f"Matched results have been saved to {matched_output_path}")
+# print(f"Unmatched results have been saved to {matched_output_path}")
+
+# # 基因元件定位
+# import pandas as pd
+# import os
+# def annotate_type(file1, file2, sheet_name1, sheet_name2, output_dir):
+#     # 读取第一个Excel文件的指定表格
+#     df1 = pd.read_excel(file1, sheet_name=sheet_name1)
+#     # 去除所有字符串列的前后空格
+#     df1 = df1.map(lambda x: x.strip() if isinstance(x, str) else x)
+#     # 确保 Start 和 End 列是整数
+#     df1['Start'] = df1['Start'].astype(int)
+#     df1['End'] = df1['End'].astype(int)
+#     # 确保 output_dir 存在
+#     os.makedirs(output_dir, exist_ok=True)
+#     # 读取第二个Excel文件的指定表格
+#     df2 = pd.read_excel(file2, sheet_name=sheet_name2)
+#     # 去除所有字符串列的前后空格
+#     df2 = df2.map(lambda x: x.strip() if isinstance(x, str) else x)
+#     # 确保 Start 和 End 列是整数
+#     df2['Start'] = df2['Start'].astype(int)
+#     df2['End'] = df2['End'].astype(int)
+#     # 添加新的列以存储匹配的Type
+#     df2['Type'] = None
+#     # 遍历第二个文件中的每一条数据
+#     for i, row in df2.iterrows():
+#         chrom = row['Chrom']
+#         strand = row['Strand']
+#         start = row['Start']
+#         end = row['End']
+#         # 在第一个文件中找到对应的部分
+#         matching_rows = df1[(df1['Chrom'] == chrom) & (df1['Strand'] == strand)]
+#         found_type = None
+#         for j, match in matching_rows.iterrows():
+#             match_start = match['Start']
+#             match_end = match['End']
+#             match_type = match['Type']
+#             if match_start <= start < end <= match_end:
+#                 found_type = match_type
+#                 break
+#             elif (start < match_start <= end) or (start <= match_end < end):
+#                 found_type = 'junctions'
+#                 break
+#         df2.at[i, 'Type'] = found_type
+#         # 构建输出文件路径
+#         output_file = os.path.join(output_dir, os.path.basename(file2))
+#      # 将结果保存到新的Excel文件中
+#     df2.to_excel(output_file, index=False)
+#     print(f"处理完成，结果保存在 {output_dir} 目录中。")
+# # 示例使用
+# file1 = "Eu_chr_gff.xlsx"
+# file2 = "Eu_finally.xlsx"
+# sheet_name1 = "Eu_chr_gff_total"
+# sheet_name2 = "Eu_pep_single"
+# output_dir = "output_files"
+# annotate_type(file1, file2, sheet_name1, sheet_name2, output_dir)
+
+# # 提取染色体上的CDS序列并简化ID
+# from Bio import SeqIO
+# def write_fasta_record(record, output_handle, line_length=100):
+#     # 提取并简化序列标识行
+#     header = record.description
+#     simplified_header = [field.split("=")[1] for field in header.split("\t") if field.startswith("Position")][0]
+#     # 写入简化后的序列标识行
+#     output_handle.write(">" + simplified_header + "\n")
+#     # 按照指定的行长度写入序列数据
+#     sequence = str(record.seq)
+#     for i in range(0, len(sequence), line_length):
+#         output_handle.write(sequence[i:i + line_length] + "\n")
+# def extract_sequences(input_file, output_file):
+#     # 初始化要提取的目标序列
+#     target_chromosomes = {f"Chr{i}" for i in range(1, 18)}
+#     # 打开输入和输出文件
+#     with open(input_file, "r") as infile, open(output_file, "w") as outfile:
+#         # 遍历输入文件中的所有序列
+#         for record in SeqIO.parse(infile, "fasta"):
+#             # 获取序列标识行
+#             header = record.description
+#             # 提取 OriSeqID 的值
+#             ori_seq_id = [field.split("=")[1] for field in header.split() if field.startswith("OriSeqID")][0]
+#             # 检查 OriSeqID 是否在目标序列中
+#             if ori_seq_id in target_chromosomes:
+#                 # 如果在目标序列中，则将该序列写入输出文件
+#                 write_fasta_record(record, outfile)
+# # 示例使用
+# input_file = "D:/桌面/Eu_peptide_database.fa"
+# output_file = "D:/桌面/Eu_peptide_database_chr.fa"
+# extract_sequences(input_file, output_file)
+
+# # 区分CDS中的CP和NCP
+# import pandas as pd
+# from Bio import SeqIO
+# # 解析位置信息
+# def parse_positions(description):
+#     parts = description.split(": ")
+#     chrom = parts[0].split()[0]
+#     range_info = parts[1]
+#     strand = parts[2].split()[0]
+#     positions = []
+#     for r in range_info.split(", "):
+#         start, end = map(int, r.split('-'))
+#         positions.append((start, end))
+#     return chrom, positions, strand
+# # 将序列位置映射到数字
+# def map_positions(sequence, positions, strand):
+#     mapped_positions = []
+#     position_list = []
+#     for start, end in positions:
+#         position_list.extend(range(start, end + 1))
+#     if strand == '+':
+#         for i, char in enumerate(sequence):
+#             mapped_positions.append((char, position_list[3*i]))
+#     else:
+#         position_list = position_list[::-1]
+#         for i, char in enumerate(sequence):
+#             mapped_positions.append((char, position_list[3*i]))
+#     return mapped_positions
+# def process_excel_and_fasta(excel_file, fasta_file, output_excel):
+#     # 读取Excel文件
+#     df = pd.read_excel(excel_file)
+#     # 读取FASTA文件，建立序列ID和序列片段的映射关系
+#     sequence_map = {}
+#     with open(fasta_file, "r") as f:
+#         for record in SeqIO.parse(f, "fasta"):
+#             description = record.description
+#             gene, positions, strand = parse_positions(description)
+#             sequence = str(record.seq)
+#             mapped_positions = map_positions(sequence, positions, strand)
+#             if gene not in sequence_map:
+#                 sequence_map[gene] = []
+#             sequence_map[gene].append((sequence, mapped_positions, strand))
+#     # 遍历Excel中的每一行，处理数据
+#     results = []
+#     for index, row in df.iterrows():
+#         chrom = row['Chrom']
+#         start = row['Start']
+#         end = row['End']
+#         sequence = row['Sequence']
+#         found_match = False
+#         if chrom in sequence_map:
+#             for seq, mapped_positions, strand in sequence_map[chrom]:
+#                 index = seq.find(sequence)
+#                 if index != -1:
+#                     # 获取比对位置
+#                     mapped_start = mapped_positions[index][1]
+#                     mapped_end = mapped_positions[index + len(sequence) - 1][1] + 2
+#                     if strand == '-':
+#                         mapped_start, mapped_end = mapped_end - 4, mapped_start
+#                     if mapped_start == start and mapped_end == end:
+#                         results.append("CDS")
+#                         found_match = True
+#                         break
+#         if not found_match:
+#             results.append("CDS_diff")
+#     # 将结果添加到DataFrame并保存到Excel
+#     df['Result'] = results
+#     df.to_excel(output_excel, index=False)
+# # 使用示例
+# excel_file = "D:/桌面/Eu_CDS.xlsx"
+# fasta_file = "D:/桌面/Eu_peptide_database_chr.fa"
+# output_excel = "D:/桌面/processed_output.xlsx"
+# process_excel_and_fasta(excel_file, fasta_file, output_excel)
+
+# # 蛋白质理化性质预测
+# from Bio.SeqUtils.ProtParam import ProteinAnalysis
+# from Bio import SeqIO
+# def analyze_protein(sequence):
+#     analysis = ProteinAnalysis(sequence)
+#     molecular_weight = analysis.molecular_weight()
+#     isoelectric_point = analysis.isoelectric_point()
+#     aromaticity = analysis.aromaticity()
+#     amino_acid_count = analysis.count_amino_acids()
+#     instability_index = analysis.instability_index()
+#     gravy = analysis.gravy()
+#     return {
+#         "sequence_length": len(sequence),
+#         "molecular_weight": molecular_weight,
+#         "isoelectric_point": isoelectric_point,
+#         "aromaticity": aromaticity,
+#         "amino_acid_count": amino_acid_count,
+#         "instability_index": instability_index,
+#         "gravy": gravy
+#     }
+# def batch_analyze_proteins(input_file, output_file):
+#     with open(output_file, "w") as out_file:
+#         out_file.write("Sequence_ID,Sequence_Length,Molecular_Weight,Isoelectric_Point,Aromaticity,Instability_Index,GRAVY\n")
+#         for record in SeqIO.parse(input_file, "fasta"):
+#             sequence_id = record.id
+#             sequence = str(record.seq)
+#             results = analyze_protein(sequence)
+#             out_file.write(f"{sequence_id},{results['sequence_length']},{results['molecular_weight']:.2f},{results['isoelectric_point']:.2f},{results['aromaticity']:.2f},{results['instability_index']:.2f},{results['gravy']:.2f}\n")
+# # 使用示例
+# input_file = "D:/桌面/CPs.fa"
+# output_file = "D:/桌面/CPs_calc.csv"
+# batch_analyze_proteins(input_file, output_file)

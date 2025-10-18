@@ -80,10 +80,6 @@ def get_unique_transcripts_with_sources(gtf_folder, output_file):
         if file.endswith('.gtf'):
             gtf_files.append(os.path.join(gtf_folder, file))
     
-    if not gtf_files:
-        print(f"在文件夹 {gtf_folder} 中未找到GTF文件")
-        return pd.DataFrame()
-    
     print(f"找到 {len(gtf_files)} 个GTF文件")
     
     # 读取所有GTF文件并收集源文件信息
@@ -158,8 +154,8 @@ def get_unique_transcripts_with_sources(gtf_folder, output_file):
     return unique_df
 
 def main():
-    input_foder = ""
-    output_file = ""
+    input_foder = r"G:\test_fractionation\20251018 imeta\file\00raw\new_transcript"
+    output_file = r"D:\Desktop\Code\Peptidogenomics-of-Eucommia-ulmoides\00raw\merged_unique_transcripts.tsv"
     get_unique_transcripts_with_sources(input_foder, output_file)
 
 if __name__ == "__main__":
