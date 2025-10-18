@@ -551,6 +551,9 @@ def analyze_peptide_properties(sequence):
             "instability_index": None
         }
 def batch_analyze_peptides(annotated_peptides_finally):
+    if 'sequence' not in annotated_peptides_finally.columns:
+        logger.error("Excel 文件中未找到 'sequence' 列")
+        return None
     results = []
     for _, row in tqdm(annotated_peptides_finally.iterrows(), 
                           total=len(annotated_peptides_finally),
@@ -675,67 +678,3 @@ if __name__ == "__main__":
         run_workflow(**input_files)
     except Exception as e:
         logger.critical(f"程序终止：{str(e)}")
-
-
-
-# import pandas as pd
-# from collections import defaultdict
-# import logging
-
-# logger = logging.getLogger(__name__)
-
-# def remove_all_overlapping_records(input_file, output_file):
-#     try:
-#         all_sheets = pd.read_excel(input_file, sheet_name=None)
-#         processed_sheets = {}
-#         for sheet_name, df in all_sheets.items():
-#             if sheet_name in ['Annotated_Peptides', 'Annotated_Proteins']:
-#                 logger.info(f"处理sheet: {sheet_name}")
-#                 non_overlapping_df = remove_overlaps_from_sheet(df)
-#                 processed_sheets[sheet_name] = non_overlapping_df
-#                 logger.info(f"Sheet {sheet_name}: 原始 {len(df)} 行 -> 去重叠后 {len(non_overlapping_df)} 行")
-#             else:
-#                 processed_sheets[sheet_name] = df
-#         with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-#             for sheet_name, df in processed_sheets.items():
-#                 df.to_excel(writer, sheet_name=sheet_name, index=False)
-#         logger.info(f"处理完成！结果保存到: {output_file}")
-        
-#     except Exception as e:
-#         logger.error(f"处理过程中出现错误: {str(e)}")
-#         raise
-
-# def remove_overlaps_from_sheet(df):
-#     grouped = df.groupby(['material','chrom', 'strand'])
-#     non_overlapping_indices = []
-#     for (material, chrom, strand), group in grouped:
-#         group_sorted = group.sort_values('start').reset_index()
-#         overlapping_indices = find_all_overlapping_intervals(group_sorted)
-#         for idx in group_sorted['index']:
-#             if idx not in overlapping_indices:
-#                 non_overlapping_indices.append(idx)
-#     return df.loc[non_overlapping_indices].reset_index(drop=True)
-
-# def find_all_overlapping_intervals(group):
-#     overlapping_indices = set()
-#     intervals = []
-#     for _, row in group.iterrows():
-#         intervals.append({
-#             'index': row['index'],
-#             'start': row['start'],
-#             'end': row['end']
-#         })
-#     for i in range(len(intervals)):
-#         for j in range(i + 1, len(intervals)):
-#             if intervals_overlap(intervals[i], intervals[j]):
-#                 overlapping_indices.add(intervals[i]['index'])
-#                 overlapping_indices.add(intervals[j]['index'])
-#     return overlapping_indices
-
-# def intervals_overlap(interval1, interval2):
-#     return not (interval1['end'] < interval2['start'] or interval2['end'] < interval1['start'])
-
-# input_file = "/Volumes/caca/test_fractionation/00raw/output/peptide_analysis_results.xlsx"
-# output_file = "/Volumes/caca/test_fractionation/00raw/output/peptide_analysis_results_no_overlap.xlsx"
-
-# remove_all_overlapping_records(input_file, output_file)
