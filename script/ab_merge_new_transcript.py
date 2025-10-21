@@ -62,8 +62,7 @@ class TranscriptProcessor:
     def load_coding_potential_predictions(self, cpc2_dir, plek_dir):
         """加载CPC2和PLEK编码潜力预测结果"""
         print("加载编码潜力预测数据...")
-        coding_transcripts = set()
-        
+        coding_transcripts = set()        
         # 加载CPC2预测结果
         if cpc2_dir and os.path.exists(cpc2_dir):
             print("加载CPC2预测结果...")
@@ -74,14 +73,12 @@ class TranscriptProcessor:
                         # CPC2结果格式：ID\tlength\tpeptide\tcoding_probability\tlabel
                         df = pd.read_csv(file_path, sep='\t', header=0)
                         for _, row in df.iterrows():
-                            transcript_id = row.iloc[0]  # 第一列为转录本ID
+                            transcript_id = row.iloc[0]
                             # 检查是否为编码（coding）
                             if len(row) >= 5 and str(row.iloc[4]).lower() in ['coding', '1']:
                                 coding_transcripts.add(transcript_id)
-                                print(f"  CPC2编码转录本: {transcript_id}")
                     except Exception as e:
                         print(f"  解析CPC2文件 {f} 时出错: {e}")
-        
         # 加载PLEK预测结果
         if plek_dir and os.path.exists(plek_dir):
             print("加载PLEK预测结果...")
@@ -96,10 +93,8 @@ class TranscriptProcessor:
                             # 检查是否为编码（coding）
                             if len(row) >= 2 and str(row.iloc[1]).lower() in ['coding', '1', 'yes']:
                                 coding_transcripts.add(transcript_id)
-                                print(f"  PLEK编码转录本: {transcript_id}")
                     except Exception as e:
                         print(f"  解析PLEK文件 {f} 时出错: {e}")
-        
         self.coding_potential_data = coding_transcripts
         print(f"  总共找到 {len(coding_transcripts)} 个具有编码潜力的转录本")
         return coding_transcripts
@@ -230,7 +225,7 @@ class TranscriptProcessor:
         print(f"  从FASTA文件中解析出 {len(transcript_to_chrom)} 个转录本-染色体映射")
         return transcript_to_chrom
     
-    def find_matching_file_pairs(self, gff3_dir, fasta_dir, cpc2_dir=None, plek_dir=None):
+    def find_matching_file_pairs(self, gff3_dir, fasta_dir, cpc2_dir, plek_dir):
         """查找GFF3和FASTA文件对，并加载编码潜力预测"""
         file_pairs = []
         # 获取所有GFF3文件
@@ -248,12 +243,10 @@ class TranscriptProcessor:
                         'gff3': gff3_files[base_name],
                         'fasta': os.path.join(fasta_dir, f),
                         'base_name': base_name
-                    })
-        
+                    })        
         # 加载编码潜力预测数据
         if cpc2_dir or plek_dir:
-            self.load_coding_potential_predictions(cpc2_dir, plek_dir)
-        
+            self.load_coding_potential_predictions(cpc2_dir, plek_dir)        
         return file_pairs
     
     def process_file_pairs(self, file_pairs):
@@ -463,22 +456,14 @@ def main():
     cpc2_directory = r"G:\Eu_peptido\20251018 imeta\file\00raw\CPC2"     # CPC2预测结果目录
     plek_directory = r"G:\Eu_peptido\20251018 imeta\file\00raw\PLEK"     # PLEK预测结果目录
     output_directory = r"G:\Eu_peptido\20251018 imeta\file\00raw\output" # 输出目录
-    
-    # 创建处理器
     processor = TranscriptProcessor()
-    
-    # 查找匹配的文件对并加载编码潜力预测
     file_pairs = processor.find_matching_file_pairs(
         gff3_directory, 
         fasta_directory, 
         cpc2_directory, 
         plek_directory
     )
-    
-    # 处理所有文件对
     processor.process_file_pairs(file_pairs)
-    
-    # 生成输出文件
     processor.generate_output_files(output_directory)
 
 if __name__ == "__main__":
