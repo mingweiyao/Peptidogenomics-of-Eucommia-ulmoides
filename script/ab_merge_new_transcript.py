@@ -59,7 +59,7 @@ class TranscriptProcessor:
     def parse_fasta_headers(self, fasta_file):
         """解析单个FASTA文件头，构建转录本ID到染色体的映射"""
         transcript_to_chrom = {}
-        pattern = r'(\S+)\s+loc:([^|]+)\|(\d+)-(\d+)\|\.\s+exons:(\d+)-(\d+)\s+segs:(\d+)-(\d+)'
+        pattern = r'(\S+)\s+loc:([^|]+)'
         try:
             for rec in SeqIO.parse(fasta_file, "fasta"):
                 header = rec.description
@@ -276,9 +276,9 @@ class TranscriptProcessor:
 
 def main():
     # 配置路径
-    gff3_directory = "/Users/lemon/Desktop/GFF3"     # GFF3文件目录
-    fasta_directory = "/Users/lemon/Desktop/fasta"   # FASTA文件目录
-    output_directory = "/Users/lemon/Desktop/output"            # 输出目录
+    gff3_directory = r"G:\Eu_peptido\20251018 imeta\file\00raw\GFF3"     # GFF3文件目录
+    fasta_directory = r"G:\Eu_peptido\20251018 imeta\file\00raw\fasta"   # FASTA文件目录
+    output_directory = r"G:\Eu_peptido\20251018 imeta\file\00raw\output" # 输出目录
     # 创建处理器
     processor = TranscriptProcessor()
     # 查找匹配的文件对
