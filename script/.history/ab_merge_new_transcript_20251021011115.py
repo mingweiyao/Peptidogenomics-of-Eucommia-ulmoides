@@ -276,9 +276,9 @@ class TranscriptProcessor:
 
 def main():
     # 配置路径
-    gff3_directory = "/Users/lemon/Desktop/GFF3"     # GFF3文件目录
-    fasta_directory = "/Users/lemon/Desktop/fasta"   # FASTA文件目录
-    output_directory = "/Users/lemon/Desktop/output"            # 输出目录
+    gff3_directory = "path/to/your/gff3/files"     # GFF3文件目录
+    fasta_directory = "path/to/your/fasta/files"   # FASTA文件目录
+    output_directory = "path/to/output"            # 输出目录
     # 创建处理器
     processor = TranscriptProcessor()
     # 查找匹配的文件对
