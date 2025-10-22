@@ -3,6 +3,8 @@ import re
 from collections import defaultdict
 import gffutils
 from Bio import SeqIO
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
 import pandas as pd
 
 class Transcript:
@@ -16,6 +18,7 @@ class Transcript:
         self.utr5 = sorted(utr5, key=lambda x: x[0]) if utr5 else []
         self.utr3 = sorted(utr3, key=lambda x: x[0]) if utr3 else []
         self.source_file = source_file
+        self.fingerprint = None
     
     def get_structure_fingerprint(self):
         """生成结构指纹：染色体_链方向_外显子边界_CDS边界_UTR边界"""
@@ -45,6 +48,8 @@ class TranscriptProcessor:
         self.processed_files = 0
         self.file_duplication_stats = defaultdict(dict)
         self.coding_potential_data = {}
+        self.sequence_dict = {}
+        self.saturation_data = [] 
 
     def parse_fasta_header(self, fasta_file):
         transcript_to_chrom = {}
@@ -58,7 +63,7 @@ class TranscriptProcessor:
         print(f"  从FASTA文件中解析出 {len(transcript_to_chrom)} 个转录本-染色体映射")
         return transcript_to_chrom
 
-    def find_matching_file_pairs(self, gff3_dir, fasta_dir, cpc2_dir, plek_dir):
+    def find_matching_file_pairs(self, gff3_dir, fasta_dir, cpc2_dir, plek_dir, pep_dir):
         file_pairs = []
         gff3_files = {}
         for f in os.listdir(gff3_dir):
@@ -75,6 +80,11 @@ class TranscriptProcessor:
             if f.endswith('.txt') or f.endswith('tsv'):
                 base_name = os.path.splitext(f)[0].split('_')[0]
                 cpc2_files[base_name] = os.path.join(cpc2_dir, f)
+        pep_files = {}
+        for f in os.listdir(pep_dir):
+            if f.endswith('.pep'):
+                base_name = os.path.splitext(f)[0].split('_')[0]
+                pep_files[base_name] = os.path.join(pep_dir, f)
         for f in os.listdir(plek_dir):
             if f.endswith('.txt') or f.endswith('tsv'):
                 base_name = os.path.splitext(f)[0].split('_')[0]
@@ -86,6 +96,7 @@ class TranscriptProcessor:
                         "fasta": fasta_files[base_name],
                         "cpc2": cpc2_files[base_name],
                         "plek": os.path.join(plek_dir, f),
+                        "pep": pep_files[base_name],
                         'base_name': base_name
                     })
         return file_pairs
@@ -99,10 +110,19 @@ class TranscriptProcessor:
         df_plek_coding = df_plek[df_plek.iloc[:, 0] == 'Coding']
         plek_ids = df_plek_coding.iloc[:, 2].apply(lambda x: str(x).split('>')[-1].split(' ')[0])
         coding_transcripts.update(plek_ids.tolist())
-        self.coding_potential_data = coding_transcripts
+        self.coding_potential_data = coding_transcripts # 为什么要做这一步
         return coding_transcripts
 
-    def parse_gff3_file_with_coding_filter(self, gff3_file, transcript_to_chrom, coding_transcripts, source_name):
+    def extract_fasta(self, transcripts, pep_file):
+        current_file_sequences = {}
+        transcript_ids = [t.transcript_id for t in transcripts]
+        for rec in SeqIO.parse(pep_file, "fasta"):
+            if rec.id in transcript_ids:
+                current_file_sequences[rec.id] = str(rec.seq)
+        self.sequence_dict.update(current_file_sequences)
+
+    def parse_gff3_file_with_coding_filter(self, gff3_file, transcript_to_chrom, 
+                                           coding_transcripts, source_name, pep_file):
         transcripts = []
         file_fingerprint_dict = {}
         db = gffutils.create_db(gff3_file, dbfn=":memory:", force=True,     
@@ -129,8 +149,8 @@ class TranscriptProcessor:
                     else:
                         utr3.append((utr.start, utr.end))    
                 transcript_obj = Transcript(
-                    transcript_id=mrna.id,
-                    transcript_seqid = mrna.seqid,
+                    transcript_id=mrna.id, # have .p1
+                    transcript_seqid = mrna.seqid, # do not have .p1
                     chrom=chrom,
                     strand=strand,
                     exons=exons,
@@ -140,13 +160,17 @@ class TranscriptProcessor:
                     source_file=source_name
                 )
                 fingerprint = transcript_obj.get_structure_fingerprint()
+                transcript_obj.fingerprint = fingerprint
                 if fingerprint not in self.fingerprint_dict:
                     file_fingerprint_dict[fingerprint] = transcript_obj
                     transcripts.append(transcript_obj)
+        self.extract_fasta(transcripts, pep_file)
         return transcripts
 
     def process_file_pairs(self, file_pairs):
         print(f"开始处理 {len(file_pairs)} 对文件...")
+        cumulative_unique = 0
+        file_order = []
         for i, pair in enumerate(file_pairs):
             self.processed_files += 1
             print(f"处理文件对 {self.processed_files}/{len(file_pairs)}: {pair['base_name']}")
@@ -155,11 +179,12 @@ class TranscriptProcessor:
             # 步骤2:加载编码潜力转录本ID
             coding_transcripts = self.loading_coding_potential_predictions(pair['cpc2'], pair['plek'])
             # 步骤3:解析GFF3文件并过滤 编码转录本
-            transcripts = self.parse_gff3_file_with_coding_filter(pair['gff3'], transcript_to_chrom, coding_transcripts, pair['base_name'])
+            transcripts = self.parse_gff3_file_with_coding_filter(pair['gff3'], transcript_to_chrom, coding_transcripts, pair['base_name'], pair['pep'])
             # 步骤4:更新全局指纹字典
             unique_transcript = []
+            new_unique_count = 0
             for transcript in transcripts:
-                fingerprint = transcript.get_structure_fingerprint()
+                fingerprint = transcript.fingerprint
                 if fingerprint not in self.fingerprint_dict:
                     self.fingerprint_dict[fingerprint] = {
                         'count': 1,
@@ -167,39 +192,35 @@ class TranscriptProcessor:
                         'all_transcripts': [transcript],
                         "representative": transcript
                     }
+                    new_unique_count += 1
                     unique_transcript.append(transcript)
                 else:
                     self.fingerprint_dict[fingerprint]['count'] += 1
                     self.fingerprint_dict[fingerprint]['source_files'].append(pair['base_name'])
                     self.fingerprint_dict[fingerprint]['all_transcripts'].append(transcript)
             self.all_transcripts.extend(unique_transcript)
+            cumulative_unique = len(self.fingerprint_dict)
+            file_order.append(pair['base_name'])
+            self.saturation_data.append({
+                'file_name': pair['base_name'],
+                'files_processed': i + 1,
+                'new_unique_transcripts': new_unique_count,
+                'cumulative_unique_transcripts': cumulative_unique,
+                'total_transcripts_so_far': len(self.all_transcripts)
+            })            
         print(f"\n处理完成。共处理 {self.processed_files} 个文件对")
     
     def generate_output_files(self, output_dir):
         """生成所有输出文件"""
         os.makedirs(output_dir, exist_ok=True)
-        # 1. 生成统计表格
-        self._generate_statistics_table(output_dir)
-        # 2. 生成非冗余GFF3文件
+        # 1. 生成去重合并后的GFF3文件
         self._generate_nonredundant_gff3(output_dir)
-        # 3. 生成支持文件详细列表
-        self._generate_support_details(output_dir)
+        # 2. 生成去重合并后的FASTA文件
+        self._generate_nonredundant_fasta(output_dir)        
+        # 3. 生成饱和曲线数据
+        self._generate_saturation_curve_data(output_dir)        
         # 4. 生成处理摘要
         self._generate_summary_report(output_dir)
-    
-    def _generate_statistics_table(self, output_dir):
-        """生成统计表格"""
-        output_file = os.path.join(output_dir, "file1_unique_coding_transcripts_statistics.tsv")
-        with open(output_file, 'w') as f:
-            f.write("Fingerprint\tChromosome\tStrand\tSupport_Count\tExon_Count\tCDS_Count\t5UTR_Count\t3UTR_Count\n")
-            for fingerprint, info in sorted(self.fingerprint_dict.items(), 
-                                          key=lambda x: x[1]['count'], reverse=True):
-                transcript = info['representative']
-                f.write(f"{fingerprint}\t{transcript.chrom}\t{transcript.strand}\t")
-                f.write(f"{info['count']}\t{transcript.transcript_id}\t")
-                f.write(f"{len(transcript.exons)}\t{len(transcript.cds_regions)}\t")
-                f.write(f"{len(transcript.utr5)}\t{len(transcript.utr3)}\n")
-        print(f"统计表格已保存至: {output_file}")
     
     def _generate_nonredundant_gff3(self, output_dir):
         """生成非冗余GFF3文件"""
@@ -236,18 +257,24 @@ class TranscriptProcessor:
                     f.write(f"{transcript.chrom}\t.\tthree_prime_UTR\t{utr[0]}\t{utr[1]}\t.\t")
                     f.write(f"{transcript.strand}\t.\tParent={transcript.transcript_seqid}\n")        
         print(f"非冗余GFF3文件已保存至: {output_file}")
-    
-    def _generate_support_details(self, output_dir):
-        """生成支持文件详细列表"""
-        output_file = os.path.join(output_dir, "file3_coding_transcript_support_details.tsv")        
+
+    def _generate_nonredundant_fasta(self, output_dir):
+        output_file = os.path.join(output_dir, "nonredundant_coding_transcript_pep.fasta")
+        records = []
+        for key, sequence in self.sequence_dict.items():
+            record = SeqRecord(Seq(sequence), id=key, description="")
         with open(output_file, 'w') as f:
-            f.write("Fingerprint\tRepresentative_Transcript\tSupport_Count\tsource_files\n")            
-            for fingerprint, info in sorted(self.fingerprint_dict.items(), 
-                                          key=lambda x: x[1]['count'], reverse=True):
-                transcript = info['representative']
-                source_files = ",".join(info['source_files'])
-                f.write(f"{fingerprint}\t{transcript.transcript_id}\t{info['count']}\t{source_files}\n")
-        print(f"支持文件详细列表已保存至: {output_file}")
+            SeqIO.write(record, f, "fasta")
+                
+    def _generate_saturation_curve_data(self, output_dir):
+        output_file = os.path.join(output_dir, "saturation_curve_data.tsv")
+        with open(output_file, 'w') as f:
+            f.write("File_Order\tFile_Name\tFiles_Processed\tNew_Unique_Transcripts\tCumulative_Unique_Transcripts\tTotal_Transcripts\n")
+            for i, data in enumerate(self.saturation_data, 1):
+                f.write(f"{i}\t{data['file_name']}\t{data['files_processed']}\t")
+                f.write(f"{data['new_unique_transcripts']}\t{data['cumulative_unique_transcripts']}\t")
+                f.write(f"{data['total_transcripts_so_far']}\n")    
+        print(f"饱和曲线数据已保存至: {output_file}")        
     
     def _generate_summary_report(self, output_dir):
         """生成处理摘要报告"""
@@ -294,16 +321,26 @@ def main():
     fasta_directory = "/Volumes/caca/Eu_peptido/20251018 imeta/file/00raw/fasta"   # FASTA文件目录
     cpc2_directory = "/Volumes/caca/Eu_peptido/20251018 imeta/file/00raw/cpc2"     # CPC2预测结果目录
     plek_directory = "/Volumes/caca/Eu_peptido/20251018 imeta/file/00raw/plek"     # PLEK预测结果目录
+    pep_directory = "/Volumes/caca/Eu_peptido/20251018 imeta/file/00raw/pep"
     output_directory = "/Volumes/caca/Eu_peptido/20251018 imeta/file/00raw/output" # 输出目录
     processor = TranscriptProcessor()
     file_pairs = processor.find_matching_file_pairs(
         gff3_directory, 
         fasta_directory, 
         cpc2_directory, 
-        plek_directory
+        plek_directory,
+        pep_directory
     )
+    print(f"找到 {len(file_pairs)} 对匹配的文件")
     processor.process_file_pairs(file_pairs)
     processor.generate_output_files(output_directory)
+    print("\n=== 处理完成 ===")
+    print(f"输出文件保存在: {output_directory}")
+    print("生成的文件:")
+    print("  1. nonredundant_coding_transcripts.gff3 - 去重合并的GFF3文件")
+    print("  2. nonredundant_coding_transcripts.fasta - 去重合并的FASTA文件") 
+    print("  3. saturation_curve_data.tsv - 饱和曲线数据")
+    print("  4. processing_summary.txt - 处理摘要报告")
 
 if __name__ == "__main__":
     main()
