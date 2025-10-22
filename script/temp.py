@@ -239,7 +239,7 @@ class TranscriptProcessor:
     
     def _generate_support_details(self, output_dir):
         """生成支持文件详细列表"""
-        output_file = os.path.join(output_dir, "coding_transcript_support_details.tsv")        
+        output_file = os.path.join(output_dir, "file3_coding_transcript_support_details.tsv")        
         with open(output_file, 'w') as f:
             f.write("Fingerprint\tRepresentative_Transcript\tSupport_Count\tsource_files\n")            
             for fingerprint, info in sorted(self.fingerprint_dict.items(), 
@@ -251,7 +251,7 @@ class TranscriptProcessor:
     
     def _generate_summary_report(self, output_dir):
         """生成处理摘要报告"""
-        output_file = os.path.join(output_dir, "coding_transcripts_processing_summary.txt")        
+        output_file = os.path.join(output_dir, "file4_coding_transcripts_processing_summary.txt")        
         with open(output_file, 'w') as f:
             f.write("=== 编码转录本处理摘要报告 ===\n\n")
             f.write(f"处理文件对数: {self.processed_files}\n")
@@ -290,11 +290,11 @@ class TranscriptProcessor:
 
 def main():
     # 配置路径
-    gff3_directory = "G:/Eu_peptido/20251018 imeta/file/00raw/GFF3"     # GFF3文件目录
-    fasta_directory = "G:/Eu_peptido/20251018 imeta/file/00raw/fasta"   # FASTA文件目录
-    cpc2_directory = "G:/Eu_peptido/20251018 imeta/file/00raw/cpc2"     # CPC2预测结果目录
-    plek_directory = "G:/Eu_peptido/20251018 imeta/file/00raw/plek"     # PLEK预测结果目录
-    output_directory = "G:/Eu_peptido/20251018 imeta/file/00raw/output" # 输出目录
+    gff3_directory = "/Volumes/caca/Eu_peptido/20251018 imeta/file/00raw/GFF3"     # GFF3文件目录
+    fasta_directory = "/Volumes/caca/Eu_peptido/20251018 imeta/file/00raw/fasta"   # FASTA文件目录
+    cpc2_directory = "/Volumes/caca/Eu_peptido/20251018 imeta/file/00raw/cpc2"     # CPC2预测结果目录
+    plek_directory = "/Volumes/caca/Eu_peptido/20251018 imeta/file/00raw/plek"     # PLEK预测结果目录
+    output_directory = "/Volumes/caca/Eu_peptido/20251018 imeta/file/00raw/output" # 输出目录
     processor = TranscriptProcessor()
     file_pairs = processor.find_matching_file_pairs(
         gff3_directory, 
