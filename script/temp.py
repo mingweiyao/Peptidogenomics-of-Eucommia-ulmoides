@@ -6,8 +6,9 @@ from Bio import SeqIO
 import pandas as pd
 
 class Transcript:
-    def __init__(self, transcript_id, chrom, strand, exons, cds_regions, utr5, utr3, source_file):
+    def __init__(self, transcript_id, transcript_seqid, chrom, strand, exons, cds_regions, utr5, utr3, source_file):
         self.transcript_id = transcript_id
+        self.transcript_seqid = transcript_seqid
         self.chrom = chrom
         self.strand = strand
         self.exons = sorted(exons, key=lambda x: x[0])
@@ -110,8 +111,7 @@ class TranscriptProcessor:
         original_transcripts = list(db.features_of_type('mRNA'))
         original_count = len(original_transcripts)
         for mrna in original_transcripts:
-            transcript_id = mrna.id.replace('.p1', '')
-            if transcript_id in coding_transcripts:
+            if mrna.seqid in coding_transcripts:
                 seq_id = mrna.seqid
                 chrom = transcript_to_chrom.get(seq_id)
                 strand = mrna.strand if mrna.strand else '+'
@@ -130,6 +130,7 @@ class TranscriptProcessor:
                         utr3.append((utr.start, utr.end))    
                 transcript_obj = Transcript(
                     transcript_id=mrna.id,
+                    transcript_seqid = mrna.seqid,
                     chrom=chrom,
                     strand=strand,
                     exons=exons,
@@ -146,9 +147,6 @@ class TranscriptProcessor:
 
     def process_file_pairs(self, file_pairs):
         print(f"开始处理 {len(file_pairs)} 对文件...")
-        total_original = 0
-        total_coding = 0
-        total_after_dedup = 0
         for i, pair in enumerate(file_pairs):
             self.processed_files += 1
             print(f"处理文件对 {self.processed_files}/{len(file_pairs)}: {pair['base_name']}")
@@ -159,23 +157,22 @@ class TranscriptProcessor:
             # 步骤3:解析GFF3文件并过滤 编码转录本
             transcripts = self.parse_gff3_file_with_coding_filter(pair['gff3'], transcript_to_chrom, coding_transcripts, pair['base_name'])
             # 步骤4:更新全局指纹字典
+            unique_transcript = []
             for transcript in transcripts:
                 fingerprint = transcript.get_structure_fingerprint()
                 if fingerprint not in self.fingerprint_dict:
                     self.fingerprint_dict[fingerprint] = {
                         'count': 1,
-                        'representative': transcript,
                         'source_files': [pair['base_name']],
-                        'all_transcripts': [transcript]
+                        'all_transcripts': [transcript],
+                        "representative": transcript
                     }
+                    unique_transcript.append(transcript)
                 else:
-                    if pair['base_name'] not in self.fingerprint_dict[fingerprint]['source_files']:
-                        self.fingerprint_dict[fingerprint]['count'] += 1
-                        self.fingerprint_dict[fingerprint]['source_files'].append(pair['base_name'])
-                        self.fingerprint_dict[fingerprint]['all_transcripts'].append(transcript)
-                    else:
-                        print(f"  警告: 指纹 {fingerprint} 已包含文件 {pair['base_name']}")
-            self.all_transcripts.extend(transcripts)
+                    self.fingerprint_dict[fingerprint]['count'] += 1
+                    self.fingerprint_dict[fingerprint]['source_files'].append(pair['base_name'])
+                    self.fingerprint_dict[fingerprint]['all_transcripts'].append(transcript)
+            self.all_transcripts.extend(unique_transcript)
         print(f"\n处理完成。共处理 {self.processed_files} 个文件对")
     
     def generate_output_files(self, output_dir):
@@ -192,48 +189,52 @@ class TranscriptProcessor:
     
     def _generate_statistics_table(self, output_dir):
         """生成统计表格"""
-        output_file = os.path.join(output_dir, "unique_coding_transcripts_statistics.tsv")
+        output_file = os.path.join(output_dir, "file1_unique_coding_transcripts_statistics.tsv")
         with open(output_file, 'w') as f:
-            f.write("Fingerprint\tChromosome\tStrand\tSupport_Count\tRepresentative_Transcript\tExon_Count\tCDS_Count\t5UTR_Count\t3UTR_Count\n")
+            f.write("Fingerprint\tChromosome\tStrand\tSupport_Count\tExon_Count\tCDS_Count\t5UTR_Count\t3UTR_Count\n")
             for fingerprint, info in sorted(self.fingerprint_dict.items(), 
                                           key=lambda x: x[1]['count'], reverse=True):
                 transcript = info['representative']
                 f.write(f"{fingerprint}\t{transcript.chrom}\t{transcript.strand}\t")
                 f.write(f"{info['count']}\t{transcript.transcript_id}\t")
                 f.write(f"{len(transcript.exons)}\t{len(transcript.cds_regions)}\t")
-                f.write(f"{len(transcript.utr5)}\t{len(transcript.utr3)}\t")
+                f.write(f"{len(transcript.utr5)}\t{len(transcript.utr3)}\n")
         print(f"统计表格已保存至: {output_file}")
     
     def _generate_nonredundant_gff3(self, output_dir):
         """生成非冗余GFF3文件"""
-        output_file = os.path.join(output_dir, "nonredundant_coding_transcripts.gff3")
+        output_file = os.path.join(output_dir, "file2_nonredundant_coding_transcripts.gff3")
         with open(output_file, 'w') as f:
             f.write("##gff-version 3\n")
             for fingerprint, info in sorted(self.fingerprint_dict.items(), 
                                           key=lambda x: x[1]['count'], reverse=True):
                 transcript = info['representative']
-                # 写入转录本行
+                # 写入基因行
                 transcript_start = min([e[0] for e in transcript.exons]) if transcript.exons else 1
                 transcript_end = max([e[1] for e in transcript.exons]) if transcript.exons else 1
-                f.write(f"{transcript.chrom}\t.\ttranscript\t{transcript_start}\t")
+                f.write(f"{transcript.chrom}\t.\tgene\t{transcript_start}\t")
                 f.write(f"{transcript_end}\t.\t{transcript.strand}\t.\t")
-                f.write(f"ID={transcript.transcript_id};Support_Count={info['count']};Source_Files={','.join(info['source_files'][:5])}{'...' if len(info['source_files']) > 5 else ''}\n")
-                # 写入外显子
-                for i, exon in enumerate(transcript.exons, 1):
-                    f.write(f"{transcript.chrom}\t.\texon\t{exon[0]}\t{exon[1]}\t.\t")
-                    f.write(f"{transcript.strand}\t.\tParent={transcript.transcript_id};exon_id={transcript.transcript_id}.exon{i}\n")          
-                # 写入CDS区域
-                for i, cds in enumerate(transcript.cds_regions, 1):
-                    f.write(f"{transcript.chrom}\t.\tCDS\t{cds[0]}\t{cds[1]}\t.\t")
-                    f.write(f"{transcript.strand}\t{i}\tParent={transcript.transcript_id}\n")                
+                f.write(f"ID={transcript.transcript_seqid};Name={fingerprint};Support_Count={info['count']}\n")
+                # 写入mRNA
+                f.write(f"{transcript.chrom}\t.\tmRNA\t{transcript_start}\t")
+                f.write(f"{transcript_end}\t.\t{transcript.strand}\t.\t")
+                f.write(f"ID={transcript.transcript_id};Parent={transcript.transcript_seqid};Support_Count={info['count']}\n")              
                 # 写入5'UTR
                 for utr in transcript.utr5:
                     f.write(f"{transcript.chrom}\t.\tfive_prime_UTR\t{utr[0]}\t{utr[1]}\t.\t")
-                    f.write(f"{transcript.strand}\t.\tParent={transcript.transcript_id}\n")                
+                    f.write(f"{transcript.strand}\t.\tParent={transcript.transcript_seqid}\n")                
+                # 写入外显子
+                for i, exon in enumerate(transcript.exons, 1):
+                    f.write(f"{transcript.chrom}\t.\texon\t{exon[0]}\t{exon[1]}\t.\t")
+                    f.write(f"{transcript.strand}\t.\tParent={transcript.transcript_seqid};exon_id={transcript.transcript_id}.exon{i}\n")          
+                # 写入CDS区域
+                for i, cds in enumerate(transcript.cds_regions, 1):
+                    f.write(f"{transcript.chrom}\t.\tCDS\t{cds[0]}\t{cds[1]}\t.\t")
+                    f.write(f"{transcript.strand}\t{i}\tParent={transcript.transcript_seqid}\n")  
                 # 写入3'UTR
                 for utr in transcript.utr3:
                     f.write(f"{transcript.chrom}\t.\tthree_prime_UTR\t{utr[0]}\t{utr[1]}\t.\t")
-                    f.write(f"{transcript.strand}\t.\tParent={transcript.transcript_id}\n")        
+                    f.write(f"{transcript.strand}\t.\tParent={transcript.transcript_seqid}\n")        
         print(f"非冗余GFF3文件已保存至: {output_file}")
     
     def _generate_support_details(self, output_dir):
@@ -289,11 +290,11 @@ class TranscriptProcessor:
 
 def main():
     # 配置路径
-    gff3_directory = "/Volumes/caca/Eu_peptido/20251018 imeta/file/00raw/GFF3"     # GFF3文件目录
-    fasta_directory = "/Volumes/caca/Eu_peptido/20251018 imeta/file/00raw/fasta"   # FASTA文件目录
-    cpc2_directory = "/Volumes/caca/Eu_peptido/20251018 imeta/file/00raw/cpc2"     # CPC2预测结果目录
-    plek_directory = "/Volumes/caca/Eu_peptido/20251018 imeta/file/00raw/plek"     # PLEK预测结果目录
-    output_directory = "/Volumes/caca/Eu_peptido/20251018 imeta/file/00raw/output" # 输出目录
+    gff3_directory = "G:/Eu_peptido/20251018 imeta/file/00raw/GFF3"     # GFF3文件目录
+    fasta_directory = "G:/Eu_peptido/20251018 imeta/file/00raw/fasta"   # FASTA文件目录
+    cpc2_directory = "G:/Eu_peptido/20251018 imeta/file/00raw/cpc2"     # CPC2预测结果目录
+    plek_directory = "G:/Eu_peptido/20251018 imeta/file/00raw/plek"     # PLEK预测结果目录
+    output_directory = "G:/Eu_peptido/20251018 imeta/file/00raw/output" # 输出目录
     processor = TranscriptProcessor()
     file_pairs = processor.find_matching_file_pairs(
         gff3_directory, 
