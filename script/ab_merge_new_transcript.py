@@ -235,11 +235,11 @@ class TranscriptProcessor:
                 transcript_end = max([e[1] for e in transcript.exons]) if transcript.exons else 1
                 f.write(f"{transcript.chrom}\t.\tgene\t{transcript_start}\t")
                 f.write(f"{transcript_end}\t.\t{transcript.strand}\t.\t")
-                f.write(f"ID={transcript.transcript_seqid};Name={fingerprint};Support_Count={info['count']}\n")
+                f.write(f"ID={transcript.transcript_id};Name={fingerprint}\n")
                 # 写入mRNA
                 f.write(f"{transcript.chrom}\t.\tmRNA\t{transcript_start}\t")
                 f.write(f"{transcript_end}\t.\t{transcript.strand}\t.\t")
-                f.write(f"ID={transcript.transcript_id};Parent={transcript.transcript_seqid};Support_Count={info['count']}\n")              
+                f.write(f"ID={transcript.transcript_id};Parent={transcript.transcript_seqid}\n")              
                 # 写入5'UTR
                 for utr in transcript.utr5:
                     f.write(f"{transcript.chrom}\t.\tfive_prime_UTR\t{utr[0]}\t{utr[1]}\t.\t")
@@ -266,7 +266,7 @@ class TranscriptProcessor:
             seq = self.sequence_dict.get(rep_id)
             if not seq:
                 continue  # 代表转录本在 pep 里没找到的话就跳过或记录
-            records.append(SeqRecord(Seq(seq), id=rep_id, description="Support_Count="+str(info["count"])))
+            records.append(SeqRecord(Seq(seq), id=rep_id))
         with open(output_file, 'w') as f:
             SeqIO.write(records, f, "fasta")
                 
@@ -309,12 +309,12 @@ class TranscriptProcessor:
 
 def main():
     # 配置路径
-    gff3_directory = r"D:\Desktop\GFF3"     # GFF3文件目录
-    fasta_directory = r"D:\Desktop\fasta"   # FASTA文件目录
-    cpc2_directory = r"D:\Desktop\cpc2"     # CPC2预测结果目录
-    plek_directory = r"D:\Desktop\plek"     # PLEK预测结果目录
-    pep_directory = r"D:\Desktop\pep"
-    output_directory = r"D:\Desktop\output" # 输出目录
+    gff3_directory = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/predict_GFF3"     # GFF3文件目录
+    fasta_directory = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/predict_fasta"   # FASTA文件目录
+    cpc2_directory = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/predict_cpc2"     # CPC2预测结果目录
+    plek_directory = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/predict_plek"     # PLEK预测结果目录
+    pep_directory = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/predict_pep"
+    output_directory = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/output" # 输出目录
     processor = TranscriptProcessor()
     file_pairs = processor.find_matching_file_pairs(
         gff3_directory, 
