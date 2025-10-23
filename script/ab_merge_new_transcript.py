@@ -309,12 +309,12 @@ class TranscriptProcessor:
 
 def main():
     # 配置路径
-    gff3_directory = r"G:\Eu_peptido\20251018 imeta\file\00raw\GFF3"     # GFF3文件目录
-    fasta_directory = r"G:\Eu_peptido\20251018 imeta\file\00raw\fasta"   # FASTA文件目录
-    cpc2_directory = r"G:\Eu_peptido\20251018 imeta\file\00raw\cpc2"     # CPC2预测结果目录
-    plek_directory = r"G:\Eu_peptido\20251018 imeta\file\00raw\plek"     # PLEK预测结果目录
-    pep_directory = r"G:\Eu_peptido\20251018 imeta\file\00raw\pep"
-    output_directory = r"G:\Eu_peptido\20251018 imeta\file\00raw\output" # 输出目录
+    gff3_directory = r"D:\Desktop\GFF3"     # GFF3文件目录
+    fasta_directory = r"D:\Desktop\fasta"   # FASTA文件目录
+    cpc2_directory = r"D:\Desktop\cpc2"     # CPC2预测结果目录
+    plek_directory = r"D:\Desktop\plek"     # PLEK预测结果目录
+    pep_directory = r"D:\Desktop\pep"
+    output_directory = r"D:\Desktop\output" # 输出目录
     processor = TranscriptProcessor()
     file_pairs = processor.find_matching_file_pairs(
         gff3_directory, 

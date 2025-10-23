@@ -1,127 +1,139 @@
 import pandas as pd
 from Bio import SeqIO
-import gffutils
 from datetime import datetime
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
 
 def filter_by_ms(ms_file, gff_file, pep_file):
-    db = gffutils.create_db(gff_file, dbfn=":memory:", force=True)
-    transcript_cds = {}
-    transcript_features = {}
-    for transcript in db.features_of_type('mRNA'):
-        cds_regions = []
-        cds_features = []
-        exon_features = []
-        utr_features = []
-        for cds in db.children(transcript.id, featuretype='CDS'):
-            cds_regions.append((cds.start, cds.end))
-            cds_features.append(cds)
-        for exon in db.children(transcript.id, featuretype='exon'):
-            exon_features.append(exon) 
-        for utr in db.children(transcript.id, featuretype=['five_prime_UTR', 'three_prime_UTR']):
-            utr_features.append(utr)
-        transcript_cds[transcript.id] = {
-            'chrom': transcript.seqid,
-            'strand': transcript.strand,
-            'cds_regions': sorted(cds_regions),
-            'peptide_count': 0,
-            'transcript_feature': transcript,
-            'cds_features': cds_features,
-            'exon_features': exon_features,
-            'utr_features': utr_features
-        }
+    transcript_lines = {}
+    current_gene_lines = []
+    current_transcript_id = None
+    with open(gff_file, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('#'):
+                continue
+            fields = line.split('\t')                
+            feature_type = fields[2]
+            attributes = fields[8]
+            if feature_type == 'gene':
+                if current_transcript_id and current_gene_lines:
+                    transcript_lines[current_transcript_id] = current_gene_lines.copy()
+                current_gene_lines = [line]
+                current_transcript_id = None
+            elif feature_type == 'mRNA':
+                current_transcript_id = attributes.split(';')[0].split('=')[-1]
+                if current_transcript_id:
+                    current_gene_lines.append(line)
+            elif current_gene_lines:
+                current_gene_lines.append(line)
+        if current_transcript_id and current_gene_lines:
+            transcript_lines[current_transcript_id] = current_gene_lines
     
-    df = pd.read_excel(ms_file, sheet_name="Sheet1")
+    df = pd.read_excel(ms_file, sheet_name="NCP")
+    transcript_peptide_count = {}
+    transcript_cds_regions = {}
+    for transcript_id, lines in transcript_lines.items():
+        cds_regions = []
+        for line in lines:
+            if not line.startswith('#') and 'CDS' in line:
+                fields = line.split('\t')
+                start = int(fields[3])
+                end = int(fields[4])
+                cds_regions.append((start, end))
+        transcript_cds_regions[transcript_id] = sorted(cds_regions)
+        transcript_peptide_count[transcript_id] = 0
+
     for _, peptide_row in df.iterrows():
         peptide_chrom = peptide_row['chrom']
         peptide_start = peptide_row['start']
         peptide_end = peptide_row['end']
-        peptide_strand = peptide_row['strand']        
-        for transcript_id, transcript_info in transcript_cds.items():
-            if (transcript_info['chrom'] != peptide_chrom) or (transcript_info['strand'] != peptide_strand):
+        peptide_strand = peptide_row['strand']
+        remain_id = []        
+        for transcript_id, lines in transcript_lines.items():
+            # 从mRNA行提取位置信息
+            mrna_line = None
+            for line in lines:
+                if not line.startswith('#') and 'mRNA' in line:
+                    mrna_line = line
+                    break            
+            if not mrna_line:
                 continue                
-            for cds_start, cds_end in transcript_info['cds_regions']:
-                if (peptide_start >= cds_start and 
-                    peptide_end <= cds_end and 
-                    (peptide_start - cds_start) % 3 == 0):
-                    transcript_info['peptide_count'] += 1
-                    break    
+            fields = mrna_line.split('\t')
+            chrom = fields[0]
+            strand = fields[6]            
+            if chrom != peptide_chrom or strand != peptide_strand:
+                continue            
+            # 精确检查：肽段是否在CDS区域内
+            cds_regions = transcript_cds_regions[transcript_id]
+            peptide_in_cds = False            
+            for cds_start, cds_end in cds_regions:
+                # 检查肽段是否完全在当前CDS区域内
+                if (peptide_start >= cds_start and peptide_end <= cds_end) and ((peptide_start - cds_start) % 3 == 0):
+                    peptide_in_cds = True
+                    remain_id.append(transcript_id)
+                    break            
+            if peptide_in_cds:
+                transcript_peptide_count[transcript_id] += 1    
+    # 加载PEP文件序列
     pep_sequences = {}
     for record in SeqIO.parse(pep_file, "fasta"):
-        pep_sequences[record.id] = str(record.seq)    
-    return transcript_cds, pep_sequences
+        if record.id in remain_id:
+            pep_sequences[record.id] = str(record.seq)    
+    return transcript_lines, transcript_peptide_count, pep_sequences
 
-def generate_gff_output(transcript_cds, output_file, db):    
-    with open(output_file, 'w') as f:
-        # 写入GFF3文件头
-        f.write("##gff-version 3\n")
-        f.write(f"##date {datetime.now().strftime('%Y-%m-%d')}\n")
-        # 按染色体和位置排序输出
-        transcripts_with_peptides = [
-            (tid, info) for tid, info in transcript_cds.items() 
-            if info['peptide_count'] > 0
-        ]
-        transcripts_with_peptides.sort(key=lambda x: (x[1]['chrom'], x[1]['transcript_feature'].start))    
-        for transcript_id, info in transcripts_with_peptides:
-            transcript = info['transcript_feature']            
-            # 写入基因行（如果存在）
-            gene_parents = list(db.parents(transcript_id, featuretype='gene'))
-            if gene_parents:
-                gene = gene_parents[0]
-                gene_attrs = f"ID={gene.id};Name={gene.id};peptide_count={info['peptide_count']}"
-                f.write(f"{gene.seqid}\t{gene.source}\t{gene.featuretype}\t{gene.start}\t{gene.end}\t{gene.score}\t{gene.strand}\t{gene.frame}\t{gene_attrs}\n")
-            # 写入mRNA行，添加peptide_count属性
-            transcript_attrs = transcript.attributes.copy()
-            transcript_attrs['peptide_count'] = [str(info['peptide_count'])]
-            attrs_str = ';'.join([f"{k}={','.join(v)}" for k, v in transcript_attrs.items()])
-            f.write(f"{transcript.seqid}\t{transcript.source}\t{transcript.featuretype}\t{transcript.start}\t{transcript.end}\t{transcript.score}\t{transcript.strand}\t{transcript.frame}\t{attrs_str}\n")
-            # 写入外显子
-            for exon in info['exon_features']:
-                exon_attrs = f"Parent={transcript_id}"
-                if 'ID' in exon.attributes:
-                    exon_attrs = f"ID={exon.attributes['ID'][0]};{exon_attrs}"
-                f.write(f"{exon.seqid}\t{exon.source}\t{exon.featuretype}\t{exon.start}\t{exon.end}\t{exon.score}\t{exon.strand}\t{exon.frame}\t{exon_attrs}\n")
-            # 写入CDS
-            for cds in info['cds_features']:
-                cds_attrs = f"Parent={transcript_id}"
-                if 'ID' in cds.attributes:
-                    cds_attrs = f"ID={cds.attributes['ID'][0]};{cds_attrs}"
-                f.write(f"{cds.seqid}\t{cds.source}\t{cds.featuretype}\t{cds.start}\t{cds.end}\t{cds.score}\t{cds.strand}\t{cds.frame}\t{cds_attrs}\n")
-            # 写入UTR
-            for utr in info['utr_features']:
-                utr_attrs = f"Parent={transcript_id}"
-                if 'ID' in utr.attributes:
-                    utr_attrs = f"ID={utr.attributes['ID'][0]};{utr_attrs}"
-                f.write(f"{utr.seqid}\t{utr.source}\t{utr.featuretype}\t{utr.start}\t{utr.end}\t{utr.score}\t{utr.strand}\t{utr.frame}\t{utr_attrs}\n")
-            f.write("###\n")
-
-def generate_outputs(transcript_cds, pep_sequences, db, output_prefix):
-    # 1. 生成GFF3格式输出
+def generate_outputs(transcript_lines, transcript_peptide_count, pep_sequences, output_prefix):
+    """生成所有要求的输出"""    
+    # 1. 生成GFF3格式输出（只输出有肽段支持的转录本）
     gff_output_file = f"{output_prefix}_transcripts_with_peptides.gff3"
-    generate_gff_output(transcript_cds, gff_output_file, db)
-    # 2. 统计不同peptide_count的转录本数量
+    with open(gff_output_file, 'w') as f:
+        f.write("##gff-version 3\n")        
+        # 遍历所有转录本，只输出有肽段支持的
+        for transcript_id, lines in transcript_lines.items():
+            if transcript_peptide_count.get(transcript_id, 0) > 0:
+                # 更新mRNA行，添加peptide_count属性
+                updated_lines = []
+                for line in lines:
+                    if 'mRNA' in line and not line.startswith('#'):
+                        if ';' in line:
+                            line = line.rstrip() + f";peptide_count={transcript_peptide_count[transcript_id]}"
+                        else:
+                            line = line.rstrip() + f"peptide_count={transcript_peptide_count[transcript_id]}"
+                    updated_lines.append(line)
+                for line in updated_lines:
+                    f.write(line + '\n')
+                f.write("###\n")
+    
+    # 2. 生成FASTA文件（有肽段支持的转录本的蛋白质序列）
+    fasta_output_file = f"{output_prefix}_transcripts_with_peptides.fasta"
+    fasta_records = []
+    for transcript_id, seq in pep_sequences.items():
+        record = SeqRecord(Seq(seq), id=transcript_id, description="")
+        fasta_records.append(record)
+    with open(fasta_output_file, "w") as f:
+        SeqIO.write(fasta_records, f, "fasta")
+
+    # 3. 统计不同peptide_count的转录本数量
     print("\n=== 不同peptide_count的转录本数量统计 ===")
     count_distribution = {}
-    for transcript_id, info in transcript_cds.items():
-        count = info['peptide_count']
-        if count not in count_distribution:
-            count_distribution[count] = 0
-        count_distribution[count] += 1    
-    # 3. 输出有肽段支持的转录本及其PEP序列
-    print("\n=== 有肽段支持的转录本及其PEP序列 ===")
-    non_zero_transcripts = {tid: info for tid, info in transcript_cds.items() if info['peptide_count'] > 0}
+    for count in transcript_peptide_count.values():
+        count_distribution[count] = count_distribution.get(count, 0) + 1
+    
+    # 4. 保存统计分布到CSV
+    stats_output_file = f"{output_prefix}_peptide_count_distribution.csv"
     df_stats = pd.DataFrame([
         {'peptide_count': count, 'transcript_count': num} 
         for count, num in count_distribution.items()
     ])
-    df_stats.to_csv(f"{output_prefix}_peptide_count_distribution.csv", index=False)
+    df_stats.to_csv(stats_output_file, index=False)
 
 def main():
-    ms_file = "path/to/your/ms_data.xlsx"
-    gff_file = "path/to/your/annotation.gff3"
-    pep_file = "path/to/your/peptide.fasta"
-    output_prefix = "analysis_results"
-    transcript_cds, pep_sequences, db = filter_by_ms(ms_file, gff_file, pep_file)
-    generate_outputs(transcript_cds, pep_sequences, db, output_prefix)
+    ms_file = r"D:\Desktop\Eu_sp_finally.xlsx"
+    gff_file = r"D:\Desktop\output\file1_nonredundant_coding_transcripts.gff3"
+    pep_file = r"D:\Desktop\output\file2_nonredundant_coding_transcript_pep.fasta"
+    output_prefix = r"D:\Desktop\analysis_results"
+    transcript_lines, transcript_peptide_count, pep_sequences = filter_by_ms(ms_file, gff_file, pep_file)
+    generate_outputs(transcript_lines, transcript_peptide_count, pep_sequences, output_prefix)
 
 if __name__ == "__main__":
     main()
