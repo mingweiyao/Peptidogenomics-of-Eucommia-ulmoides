@@ -342,12 +342,12 @@ class TranscriptProcessor:
 
 def main():
     # 配置路径
-    gff3_directory = r"G:\Eu_peptido\20251018imeta\file\00raw\gff3"     # GFF3文件目录
-    fasta_directory = r"G:\Eu_peptido\20251018imeta\file\00raw\fasta"   # FASTA文件目录
-    cpc2_directory = r"G:\Eu_peptido\20251018imeta\file\00raw\cpc2"     # CPC2预测结果目录
-    plek_directory = r"G:\Eu_peptido\20251018imeta\file\00raw\plek"     # PLEK预测结果目录
-    pep_directory = r"G:\Eu_peptido\20251018imeta\file\00raw\pep"
-    output_directory = r"G:\Eu_peptido\20251018imeta\file\00raw\output" # 输出目录
+    gff3_directory = "/media/wanglab/caca/Eu_peptido/20251018imeta/file/00raw/predict_GFF3"     # GFF3文件目录
+    fasta_directory = "/media/wanglab/caca/Eu_peptido/20251018imeta/file/00raw/predict_fasta"   # FASTA文件目录
+    cpc2_directory = "/media/wanglab/caca/Eu_peptido/20251018imeta/file/00raw/predict_cpc2"     # CPC2预测结果目录
+    plek_directory = "/media/wanglab/caca/Eu_peptido/20251018imeta/file/00raw/predict_plek"     # PLEK预测结果目录
+    pep_directory = "/media/wanglab/caca/Eu_peptido/20251018imeta/file/00raw/predict_pep"
+    output_directory = "/media/wanglab/caca/Eu_peptido/20251018imeta/file/00raw/output" # 输出目录
     processor = TranscriptProcessor()
     file_pairs = processor.find_matching_file_pairs(
         gff3_directory, 

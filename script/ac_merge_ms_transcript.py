@@ -52,7 +52,7 @@ def filter_by_ms(ms_file, gff_file, pep_file, workers=None):
                 current_gene_lines = [line]
                 current_transcript_id = None
             elif ftype == 'mRNA':
-                tid = attrs.split(';')[0].split('=')[-1]
+                tid = attrs.split(';')[1].split('=')[-1]
                 current_transcript_id = tid
                 current_gene_lines.append(line)
                 transcript_mrna_info[tid] = {
@@ -125,9 +125,9 @@ def generate_outputs(transcript_lines, transcript_peptide_count, pep_sequences, 
                     if (not line.startswith('#')) and ('\tmRNA\t' in line):
                         # 安全追加属性
                         if line.endswith(';') or ';' in line:
-                            line = line.rstrip() + f";peptide_count={pc}"
-                        else:
                             line = line.rstrip() + f"peptide_count={pc}"
+                        else:
+                            line = line.rstrip() + f";peptide_count={pc}"
                     f.write(line + '\n')
                 f.write("###\n")
 
@@ -146,10 +146,10 @@ def generate_outputs(transcript_lines, transcript_peptide_count, pep_sequences, 
     ).to_csv(stats_output_file, index=False)
 
 def main():
-    ms_file = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/Eu_sp_finally.xlsx"
-    gff_file = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/output/filter_file1_nonredundant_coding_transcripts.gff3"
-    pep_file = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/output/filter_file2_nonredundant_coding_transcript_pep.fasta"
-    output_prefix = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/01new_gene/analysis_results/filter_by_ms"
+    ms_file = "/media/wanglab/caca/Eu_peptido/20251018imeta/file/00raw/Eu_sp_finally.xlsx"
+    gff_file = "/media/wanglab/caca/Eu_peptido/20251018imeta/file/00raw/output/filter_file1_nonredundant_coding_transcripts.gff3"
+    pep_file = "/media/wanglab/caca/Eu_peptido/20251018imeta/file/00raw/output/filter_file2_nonredundant_coding_transcript_pep.fasta"
+    output_prefix = "/media/wanglab/caca/Eu_peptido/20251018imeta/file/01new_gene/analysis_results/filter_by_ms"
     transcript_lines, transcript_peptide_count, pep_sequences = filter_by_ms(
         ms_file, gff_file, pep_file, workers=100
     )
