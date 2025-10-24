@@ -166,38 +166,6 @@ class TranscriptProcessor:
         self.extract_fasta(transcripts, pep_file)
         return transcripts
 
-    def collapse_by_mrna_fingerprint_keep_longest_cds(self):
-        def mrna_key_from_fingerprint(fp: str):
-            parts = fp.split('|')
-            return '|'.join(parts[:2])
-        def is_redundant(start1, end1, start2, end2):
-            return start1 >= start2 and end1 <= end2
-        groups = defaultdict(list)
-        for fp, info in self.fingerprint_dict.items():
-            rep = info["representative"]
-            mrna_key = mrna_key_from_fingerprint(fp)
-            groups[mrna_key].append((fp, rep))
-        keep_fps = set()
-        for mrna_key, items in groups.items():
-            if len(items) == 1:
-                keep_fps.add(items[0][0])
-            else:
-                items.sort(key=lambda kv: (kv[1].exons[0][0], -kv[1].exons[-1][1]))
-                best_fp = None
-                for i, (fp1, rep1) in enumerate(items):
-                    start1, end1 = rep1.exons[0][0], rep1.exons[-1][1]
-                    is_valid = True
-                    if best_fp is not None:
-                        best_rep = self.fingerprint_dict[best_fp]["representative"]
-                        best_start, best_end = best_rep.exons[0][0], best_rep.exons[-1][1]
-                        if is_redundant(start1, end1, best_start, best_end):
-                            is_valid = False 
-                    if is_valid:
-                        keep_fps.add(fp1)
-                        best_fp = fp1
-        self.fingerprint_dict = {fp: info for fp, info in self.fingerprint_dict.items() if fp in keep_fps}
-        self.all_transcripts = [info["representative"] for info in self.fingerprint_dict.values()]
-
     def process_file_pairs(self, file_pairs):
         print(f"开始处理 {len(file_pairs)} 对文件...")
         cumulative_unique = 0
@@ -357,7 +325,6 @@ def main():
     )
     print(f"找到 {len(file_pairs)} 对匹配的文件")
     processor.process_file_pairs(file_pairs)
-    processor.collapse_by_mrna_fingerprint_keep_longest_cds()
     processor.generate_output_files(output_directory)
     print("\n=== 处理完成 ===")
     print(f"输出文件保存在: {output_directory}")
