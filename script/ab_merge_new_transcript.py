@@ -110,7 +110,7 @@ class TranscriptProcessor:
         df_plek_coding = df_plek[df_plek.iloc[:, 0] == 'Coding']
         plek_ids = df_plek_coding.iloc[:, 2].apply(lambda x: str(x).split('>')[-1].split(' ')[0])
         coding_transcripts.update(plek_ids.tolist())
-        self.coding_potential_data = coding_transcripts # 为什么要做这一步
+        self.coding_potential_data = coding_transcripts
         return coding_transcripts
 
     def extract_fasta(self, transcripts, pep_file):
@@ -165,11 +165,12 @@ class TranscriptProcessor:
                     transcripts.append(transcript_obj)
         self.extract_fasta(transcripts, pep_file)
         return transcripts
-
+    
     def collapse_by_mrna_fingerprint_keep_longest_cds(self):
         def mrna_key_from_fingerprint(fp: str):
+            # fingerprint 形如: "chrom_strand|exon_bounds|cds_bounds|utr5|utr3"
             parts = fp.split('|')
-            return '|'.join(parts[:2])
+            return parts[0]
         def is_redundant(start1, end1, start2, end2):
             return start1 >= start2 and end1 <= end2
         groups = defaultdict(list)
@@ -182,14 +183,14 @@ class TranscriptProcessor:
             if len(items) == 1:
                 keep_fps.add(items[0][0])
             else:
-                items.sort(key=lambda kv: (kv[1].exons[0][0], -kv[1].exons[-1][1]))
+                items.sort(key=lambda kv: (kv[1].cds_regions[0][0], -kv[1].cds_regions[-1][1]))
                 best_fp = None
                 for i, (fp1, rep1) in enumerate(items):
-                    start1, end1 = rep1.exons[0][0], rep1.exons[-1][1]
+                    start1, end1 = rep1.cds_regions[0][0], rep1.cds_regions[-1][1]
                     is_valid = True
                     if best_fp is not None:
                         best_rep = self.fingerprint_dict[best_fp]["representative"]
-                        best_start, best_end = best_rep.exons[0][0], best_rep.exons[-1][1]
+                        best_start, best_end = best_rep.cds_regions[0][0], best_rep.cds_regions[-1][1]
                         if is_redundant(start1, end1, best_start, best_end):
                             is_valid = False 
                     if is_valid:
@@ -256,7 +257,7 @@ class TranscriptProcessor:
     
     def _generate_nonredundant_gff3(self, output_dir):
         """生成非冗余GFF3文件"""
-        output_file = os.path.join(output_dir, "file1_nonredundant_coding_transcripts.gff3")
+        output_file = os.path.join(output_dir, "filter_file1_nonredundant_coding_transcripts.gff3")
         with open(output_file, 'w') as f:
             f.write("##gff-version 3\n")
             for fingerprint, info in sorted(self.fingerprint_dict.items(), 
@@ -271,27 +272,27 @@ class TranscriptProcessor:
                 # 写入mRNA
                 f.write(f"{transcript.chrom}\t.\tmRNA\t{transcript_start}\t")
                 f.write(f"{transcript_end}\t.\t{transcript.strand}\t.\t")
-                f.write(f"ID={transcript.transcript_id};Parent={transcript.transcript_seqid}\n")              
+                f.write(f"ID={transcript.transcript_id}.1;Parent={transcript.transcript_id}\n")              
                 # 写入5'UTR
                 for utr in transcript.utr5:
                     f.write(f"{transcript.chrom}\t.\tfive_prime_UTR\t{utr[0]}\t{utr[1]}\t.\t")
-                    f.write(f"{transcript.strand}\t.\tParent={transcript.transcript_seqid}\n")                
+                    f.write(f"{transcript.strand}\t.\tID={transcript.transcript_id}.1.utr5;Parent={transcript.transcript_id}.1\n")                
                 # 写入外显子
                 for i, exon in enumerate(transcript.exons, 1):
                     f.write(f"{transcript.chrom}\t.\texon\t{exon[0]}\t{exon[1]}\t.\t")
-                    f.write(f"{transcript.strand}\t.\tParent={transcript.transcript_seqid};exon_id={transcript.transcript_id}.exon{i}\n")          
+                    f.write(f"{transcript.strand}\t.\tID={transcript.transcript_id}.1.exon;Parent={transcript.transcript_id}.1\n")          
                 # 写入CDS区域
                 for i, cds in enumerate(transcript.cds_regions, 1):
                     f.write(f"{transcript.chrom}\t.\tCDS\t{cds[0]}\t{cds[1]}\t.\t")
-                    f.write(f"{transcript.strand}\t{i}\tParent={transcript.transcript_seqid}\n")  
+                    f.write(f"{transcript.strand}\t0\tID=cds.{transcript.transcript_id}.1;Parent={transcript.transcript_id}.1\n")  
                 # 写入3'UTR
                 for utr in transcript.utr3:
                     f.write(f"{transcript.chrom}\t.\tthree_prime_UTR\t{utr[0]}\t{utr[1]}\t.\t")
-                    f.write(f"{transcript.strand}\t.\tParent={transcript.transcript_seqid}\n")        
+                    f.write(f"{transcript.strand}\t.\tID={transcript.transcript_id}.1.utr3;Parent={transcript.transcript_id}.1\n")        
         print(f"非冗余GFF3文件已保存至: {output_file}")
 
     def _generate_nonredundant_fasta(self, output_dir):
-        output_file = os.path.join(output_dir, "file2_nonredundant_coding_transcript_pep.fasta")
+        output_file = os.path.join(output_dir, "filter_file2_nonredundant_coding_transcript_pep.fasta")
         records = []
         for fp, info in self.fingerprint_dict.items():
             rep_id = info["representative"].transcript_id
@@ -303,7 +304,7 @@ class TranscriptProcessor:
             SeqIO.write(records, f, "fasta")
                 
     def _generate_saturation_curve_data(self, output_dir):
-        output_file = os.path.join(output_dir, "file3_saturation_curve_data.tsv")
+        output_file = os.path.join(output_dir, "filter_file3_saturation_curve_data.tsv")
         with open(output_file, 'w') as f:
             f.write("File_Order\tFile_Name\tFiles_Processed\tNew_Unique_Transcripts\tCumulative_Unique_Transcripts\tTotal_Transcripts\n")
             for i, data in enumerate(self.saturation_data, 1):
@@ -314,7 +315,7 @@ class TranscriptProcessor:
     
     def _generate_summary_report(self, output_dir):
         """生成处理摘要报告"""
-        output_file = os.path.join(output_dir, "file4_coding_transcripts_processing_summary.txt")        
+        output_file = os.path.join(output_dir, "filter_file4_coding_transcripts_processing_summary.txt")        
         with open(output_file, 'w') as f:
             f.write("=== 编码转录本处理摘要报告 ===\n\n")
             f.write(f"处理文件对数: {self.processed_files}\n")
@@ -341,12 +342,12 @@ class TranscriptProcessor:
 
 def main():
     # 配置路径
-    gff3_directory = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/predict_GFF3"     # GFF3文件目录
-    fasta_directory = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/predict_fasta"   # FASTA文件目录
-    cpc2_directory = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/predict_cpc2"     # CPC2预测结果目录
-    plek_directory = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/predict_plek"     # PLEK预测结果目录
-    pep_directory = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/predict_pep"
-    output_directory = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/output" # 输出目录
+    gff3_directory = r"G:\Eu_peptido\20251018imeta\file\00raw\gff3"     # GFF3文件目录
+    fasta_directory = r"G:\Eu_peptido\20251018imeta\file\00raw\fasta"   # FASTA文件目录
+    cpc2_directory = r"G:\Eu_peptido\20251018imeta\file\00raw\cpc2"     # CPC2预测结果目录
+    plek_directory = r"G:\Eu_peptido\20251018imeta\file\00raw\plek"     # PLEK预测结果目录
+    pep_directory = r"G:\Eu_peptido\20251018imeta\file\00raw\pep"
+    output_directory = r"G:\Eu_peptido\20251018imeta\file\00raw\output" # 输出目录
     processor = TranscriptProcessor()
     file_pairs = processor.find_matching_file_pairs(
         gff3_directory, 

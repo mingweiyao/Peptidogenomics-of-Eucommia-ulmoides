@@ -147,9 +147,9 @@ def generate_outputs(transcript_lines, transcript_peptide_count, pep_sequences, 
 
 def main():
     ms_file = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/Eu_sp_finally.xlsx"
-    gff_file = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/output/file1_nonredundant_coding_transcripts.gff3"
-    pep_file = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/output/file2_nonredundant_coding_transcript_pep.fasta"
-    output_prefix = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/01new_gene/analysis_results"
+    gff_file = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/output/filter_file1_nonredundant_coding_transcripts.gff3"
+    pep_file = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/00raw/output/filter_file2_nonredundant_coding_transcript_pep.fasta"
+    output_prefix = "/media/wanglab/caca/Eu_peptido/20251018 imeta/file/01new_gene/analysis_results/filter_by_ms"
     transcript_lines, transcript_peptide_count, pep_sequences = filter_by_ms(
         ms_file, gff_file, pep_file, workers=100
     )
