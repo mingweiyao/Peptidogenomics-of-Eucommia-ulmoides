@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 from collections import defaultdict
+from tqdm import tqdm
 
 def build_group_samples(sample_df):
     group_samples = defaultdict(list)
@@ -46,8 +47,7 @@ def selected_new_genes(cv_df, prefix_annot, prefix_new):
     selected = new_cv.loc[meets_all]
     return thresholds_per_group, selected    
 
-def calculate_cv_count_and_filter(expression_file, sample_file, output_dir):
-    expression_df = pd.read_excel(expression_file)
+def calculate_cv_count_and_filter(expression_df, sample_file, output_dir):
     sample_df = pd.read_excel(sample_file)
     # 样本信息与表达量数据的对应处理
     group_samples = build_group_samples(sample_df)
@@ -65,11 +65,36 @@ def calculate_cv_count_and_filter(expression_file, sample_file, output_dir):
     thr_per_group.to_csv(thr_out, sep='\t', header=['threshold'])
     selected_new_all_groups.to_csv(sel_out, sep='\t', index_label='gene_id')
 
+def merge_count_file(rnaseq_quantitative, sample_file, merge_gene_matrix, gene_id_col = "Geneid"):
+    count_file = pd.read_excel(sample_file, sheet_name="Sheet4")
+    merged_df = None
+    for _, row in tqdm(count_file.iterrows(), desc="合并进度"):
+        file = row['Sample']
+        sample_name = f"{file}_counts.txt"
+        file_path = os.path.join(rnaseq_quantitative, sample_name)
+        df = pd.read_csv(file_path, seq = '\t', comment = "#")
+        counts = df[[gene_id_col, df.columns[-1]]]
+        counts.columns = ['GeneID', file]
+        if merged_df is None:
+            merged_df = counts
+        else:
+            merged_df = pd.merge(merged_df, counts, on='GeneID', how='outer')
+    if merged_df is not None:
+        print(f"\n合并后数据维度: {merged_df.shape}")
+        if merged_df.duplicated('GeneID').any():
+            print(f"警告：存在重复基因ID，将取第一个出现的值")
+            merged_df = merged_df.drop_duplicates('GeneID')
+        merged_df.to_csv(merge_gene_matrix, index=False)
+        return merged_df        
+
 def main():
-    expression_file = ""
+    rnaseq_quantitative = ""
     sample_file = ""
     output_dir = ""
-    calculate_cv_count_and_filter(expression_file, sample_file, output_dir)
+
+    merge_gene_matrix = os.path.join(output_dir, "merge_gene_matrix.csv")
+    quantitative_df = merge_count_file(rnaseq_quantitative, sample_file, merge_gene_matrix)
+    calculate_cv_count_and_filter(quantitative_df, sample_file, output_dir)
 
 if __name__ == "__main__":
     main()
