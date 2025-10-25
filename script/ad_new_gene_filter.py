@@ -48,7 +48,7 @@ def selected_new_genes(cv_df, prefix_annot, prefix_new):
     return thresholds_per_group, selected    
 
 def calculate_cv_count_and_filter(expression_df, sample_file, output_dir):
-    sample_df = pd.read_excel(sample_file)
+    sample_df = pd.read_excel(sample_file, sheet_name="filter")
     # 样本信息与表达量数据的对应处理
     group_samples = build_group_samples(sample_df)
     expression_df = prepare_expr_df(expression_df, group_samples)
@@ -66,7 +66,7 @@ def calculate_cv_count_and_filter(expression_df, sample_file, output_dir):
     selected_new_all_groups.to_csv(sel_out, sep='\t', index_label='gene_id')
 
 def merge_count_file(rnaseq_quantitative, sample_file, merge_gene_matrix, gene_id_col = "Geneid"):
-    count_file = pd.read_excel(sample_file, sheet_name="Sheet4")
+    count_file = pd.read_excel(sample_file, sheet_name="Sheet2")
     merged_df = None
     for _, row in tqdm(count_file.iterrows(), desc="合并进度"):
         file = row['Sample']
