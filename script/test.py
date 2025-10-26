@@ -36,246 +36,142 @@
 #             count+=1
 # print(count)
 
-import os
-import re
-from collections import defaultdict
-import gffutils
-from Bio import SeqIO
-from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
 import pandas as pd
+import re
+from datetime import datetime
+from tqdm import tqdm
+from collections import defaultdict, Counter
+from concurrent.futures import ProcessPoolExecutor
 
-class Transcript:
-    def __init__(self, gene_id, transcript_id, reference_id, ref_gene_id, chrom, strand, exons, source_file):
-        self.transcript_id = transcript_id
-        self.gene_id = gene_id
-        self.reference_id = reference_id
-        self.ref_gene_id = ref_gene_id
-        self.chrom = chrom
-        self.strand = strand
-        self.exons = sorted(exons, key=lambda x: x[0])
-        self.source_file = source_file
-        self.fingerprint = None
-    
-    def get_structure_fingerprint(self):
-        """生成结构指纹：染色体_链方向_外显子边界_CDS边界_UTR边界"""
-        fingerprint_parts = [f"{self.chrom}_{self.strand}"]        
-        exon_boundaries = []
-        for exon in self.exons:
-            exon_boundaries.extend([str(exon[0]), str(exon[1])])
-        fingerprint_parts.append("-".join(exon_boundaries) if exon_boundaries else "None")   
-        return "|".join(fingerprint_parts)
+RE_TRANSCRIPT_ID = re.compile(r'transcript_id "([^"]+)"')
+RE_GENE_ID = re.compile(r'gene_id "([^"]+)"')
+_CANDIDATE_INDEX = None
 
-class TranscriptProcessor:
-    def __init__(self):
-        self.fingerprint_dict = {}
-        self.all_transcripts = []
-        self.processed_files = 0
-        self.file_duplication_stats = defaultdict(dict)
-        self.coding_potential_data = {}
-        self.sequence_dict = {}
-        self.saturation_data = [] 
+def _init_worker(candidate_index):
+    global _CANDIDATE_INDEX
+    _CANDIDATE_INDEX = candidate_index
 
-    def find_matching_file_pairs(self, gtf_dir, cpc2_dir, plek_dir):
-        file_pairs = []
-        gtf_files = {}
-        for f in os.listdir(gtf_dir):
-            if f.endswith('.gtf'):
-                base_name = os.path.splitext(f)[0].split('_')[0]
-                gtf_files[base_name] = os.path.join(gtf_dir, f)
-        cpc2_files = {}
-        for f in os.listdir(cpc2_dir):
-            if f.endswith('.txt') or f.endswith('tsv'):
-                base_name = os.path.splitext(f)[0].split('_')[0]
-                cpc2_files[base_name] = os.path.join(cpc2_dir, f)
-        for f in os.listdir(plek_dir):
-            if f.endswith('.txt') or f.endswith('tsv'):
-                base_name = os.path.splitext(f)[0].split('_')[0]
-                if (base_name in gtf_files and 
-                    base_name in cpc2_files):
-                    file_pairs.append({
-                        "gff3": gtf_files[base_name],
-                        "cpc2": cpc2_files[base_name],
-                        "plek": os.path.join(plek_dir, f),
-                        'base_name': base_name
-                    })
-        return file_pairs
+def _worker_match_one_peptide(peptide_tuple):
+    chrom, pstart, pend, strand = peptide_tuple
+    hit_ids = []
+    for tid, exon_regions in _CANDIDATE_INDEX.get((chrom, strand), []):
+        tr_start = exon_regions[0][0]
+        tr_end = exon_regions[-1][1]
+        if not (tr_start <= pstart <= pend <= tr_end):
+            continue
+        matched = False
+        for (exon_start, exon_end) in exon_regions:
+            if pstart >= exon_start and pend <= exon_end:
+                if (pstart - exon_start) % 3 == 0:
+                    matched = True
+                break
+        if not matched and len(exon_regions) >= 2:
+            for idx in range(len(exon_regions) - 1):
+                e1_start, e1_end = exon_regions[idx]
+                e2_start, e2_end = exon_regions[idx + 1]
+                if (e1_start <= pstart <= e1_end) and (e2_start <= pend <= e2_end):
+                    if (pstart - e1_start) % 3 == 0:
+                        matched = True
+                    break
+        if matched:
+            hit_ids.append(tid)             
+    return hit_ids
 
-    def loading_coding_potential_predictions(self, cpc2_file, plek_file):
-        coding_transcripts = set()
-        df_cpc2 = pd.read_csv(cpc2_file, sep='\t', header=0)
-        df_cpc2_coding = df_cpc2[df_cpc2.iloc[:, -1] == 'coding']
-        coding_transcripts.update(df_cpc2_coding.iloc[:, 0].tolist())
-        df_plek = pd.read_csv(plek_file, sep='\t', header=None)
-        df_plek_coding = df_plek[df_plek.iloc[:, 0] == 'Coding']
-        plek_ids = df_plek_coding.iloc[:, 2].apply(lambda x: str(x).split('>')[-1].split(' ')[0])
-        coding_transcripts.update(plek_ids.tolist())
-        self.coding_potential_data = coding_transcripts
-        return coding_transcripts
+def filter_by_ms(ms_file, gtf_file, workers=None):
+    # 读取 GTF 文件
+    transcript_lines = defaultdict(list)
+    transcript_info = {}    
+    current_gene_lines = []
+    current_transcript_id = None
 
-    def parse_gtf_file_with_coding_filter(self, gtf_file, coding_transcripts, source_name):
-        transcripts = []
-        file_fingerprint_dict = {}
-        db = gffutils.create_db(gtf_file, dbfn=":memory:", force=True, keep_order=True, merge_strategy='merge',
-                                  sort_attribute_values=True, id_spec={"transcript": "transcript_id", "gene": "gene_id"})
-        for tr in db.features_of_type('transcript'):
-            attr_list = tr.attributes.split(";")
-            gene_id = attr_list[0].spilt(" ")[-1]
-            transcript_id = attr_list[1].split(' ')[-1]
-            reference_id = attr_list[2].split(" ")[-1]
-            ref_gene_id = attr_list[3].split(" ")[-1]
-            chrom = tr.seqid
-            strand = tr.strand if tr.strand else '.'
-            exons = []
-            for exon in db.children(tr, featuretype='exon', order_by='start'):
-                exons.append((exon.start, exon.end))
-            transcript_obj = Transcript(
-                gene_id = gene_id,
-                transcript_id = transcript_id,
-                reference_id = reference_id,
-                ref_gene_id = ref_gene_id,
-                chrom = chrom,
-                strand = strand,
-                exons = exons,
-                source_file = source_name
-            )
-            fingerprint = transcript_obj.get_structure_fingerprint()
-            transcript_obj.fingerprint = fingerprint
-            if fingerprint not in file_fingerprint_dict:
-                file_fingerprint_dict[fingerprint] = transcript_obj
-                transcripts.append(transcript_obj)
-        return transcripts            
+    with open(gtf_file, 'r') as f:
+        for line in tqdm(f, desc="Loading GTF"):
+            if not line or line.startswith('#'):
+                continue
+            line = line.rstrip('\n')
+            chrom, _, ftype, start, end, _, strand, _, attrs = line.split('\t')
+            if ftype == 'transcript':
+                if current_transcript_id and current_gene_lines:
+                    transcript_lines[current_transcript_id] = current_gene_lines
+                tid_match = RE_TRANSCRIPT_ID.search(attrs)
+                gid_match = RE_GENE_ID.search(attrs)
+                if not (tid_match and gid_match):
+                    continue
+                tid = tid_match.group(1)
+                gid = gid_match.group(1)
+                current_transcript_id = tid
+                current_gene_lines = [line]
+                transcript_info[tid] = {
+                    'gene_id': gid, 'chrom': chrom, 'strand': strand,
+                    'start': int(start), 'end': int(end),
+                }
+            elif ftype == 'exon':
+                if current_transcript_id:
+                    current_gene_lines.append(line)
+        if current_transcript_id and current_gene_lines:
+            transcript_lines[current_transcript_id] = current_gene_lines
 
-    def process_file_pairs(self, file_pairs):
-        print(f"开始处理 {len(file_pairs)} 对文件...")
-        cumulative_unique = 0
-        file_order = []    
-        for i, pair in enumerate(file_pairs):
-            self.processed_files += 1
-            print(f"处理文件对 {self.processed_files}/{len(file_pairs)}: {pair['base_name']}")  
-            # 步骤1：加载编码潜力转录本ID
-            coding_transcripts = self.loading_coding_potential_predictions(pair['cpc2'], pair['plek'])
-            # 步骤2：解析GTF文件并过滤编码转录本
-            transcripts = self.parse_gtf_file_with_coding_filter(pair['gtf'], coding_transcripts, pair['base_name'])
-            # 步骤3:更新全局指纹字典
-            unique_transcript = []
-            new_unique_count = 0
-            for transcript in transcripts:
-                fingerprint = transcript.fingerprint
-                if fingerprint not in self.fingerprint_dict:
-                    self.fingerprint_dict[fingerprint] = {
-                        'count': 1,
-                        'source_files': [pair['base_name']],
-                        'all_transcripts': [transcript],
-                        "representative": transcript
-                    }
-                    new_unique_count += 1
-                    unique_transcript.append(transcript)
-                else:
-                    self.fingerprint_dict[fingerprint]['count'] += 1
-                    self.fingerprint_dict[fingerprint]['source_files'].append(pair['base_name'])
-                    self.fingerprint_dict[fingerprint]['all_transcripts'].append(transcript)
-            self.all_transcripts.extend(unique_transcript)
-            cumulative_unique = len(self.fingerprint_dict)
-            file_order.append(pair['base_name'])
-            self.saturation_data.append({
-                'file_name': pair['base_name'],
-                'files_processed': i + 1,
-                'new_unique_transcripts': new_unique_count,
-                'cumulative_unique_transcripts': cumulative_unique,
-                'total_transcripts_so_far': len(self.all_transcripts)
-            })            
-        print(f"\n处理完成。共处理 {self.processed_files} 个文件对")
+    transcript_exon_region = {}
+    for tid, lines in tqdm(transcript_lines.items(), desc="Parsing exon regions"):
+        exon = []
+        for line in lines:
+            if line.startswith('#'):
+                continue
+            f = line.split('\t')
+            if f[2] == 'exon':
+                exon.append((int(f[3]), int(f[4])))
+        transcript_exon_region[tid] = sorted(exon)
 
-    def generate_output_files(self, output_dir):
-        """生成所有输出文件"""
-        os.makedirs(output_dir, exist_ok=True)
-        # 1. 生成去重合并后的GFF3文件
-        self._generate_nonredundant_gtf(output_dir)      
-        # 2. 生成饱和曲线数据
-        self._generate_saturation_curve_data(output_dir)        
-        # 3. 生成处理摘要
-        self._generate_summary_report(output_dir)
-    
-    def _generate_nonredundant_gtf(self, output_dir):
-        """生成非冗余GFF3文件"""
-        output_file = os.path.join(output_dir, "file1_nonredundant_coding_transcripts.gtf")
-        with open(output_file, 'w') as f:
-            f.write("##gtf file\n")
-            for fingerprint, info in sorted(self.fingerprint_dict.items(), 
-                                          key=lambda x: x[1]['count'], reverse=True):
-                transcript = info['representative']
-                # 写入基因行
-                transcript_start = min([e[0] for e in transcript.exons]) if transcript.exons else 1
-                transcript_end = max([e[1] for e in transcript.exons]) if transcript.exons else 1
-                f.write(f"{transcript.chrom}\t.\ttranscript\t{transcript_start}\t")
-                f.write(f"{transcript_end}\t.\t{transcript.strand}\t.\t")
-                f.write(f"gene_id={transcript.gene_id}; transcript_id={transcript.transcript_id}; reference_id={transcript.reference_id}; ref_gene_id={transcript.ref_gene_id}\n")            
-                # 写入外显子
-                for i, exon in enumerate(transcript.exons, 1):
-                    f.write(f"{transcript.chrom}\t.\texon\t{exon[0]}\t{exon[1]}\t.\t")
-                    f.write(f"{transcript.strand}\t.\t")
-                    f.write(f"gene_id={transcript.gene_id}; transcript_id={transcript.transcript_id}; exon_number={i+1}; reference_id={transcript.reference_id}; ref_gene_id={transcript.ref_gene_id}\n")               
-        print(f"非冗余GFF3文件已保存至: {output_file}")
-                
-    def _generate_saturation_curve_data(self, output_dir):
-        output_file = os.path.join(output_dir, "file2_saturation_curve_data.tsv")
-        with open(output_file, 'w') as f:
-            f.write("File_Order\tFile_Name\tFiles_Processed\tNew_Unique_Transcripts\tCumulative_Unique_Transcripts\tTotal_Transcripts\n")
-            for i, data in enumerate(self.saturation_data, 1):
-                f.write(f"{i}\t{data['file_name']}\t{data['files_processed']}\t")
-                f.write(f"{data['new_unique_transcripts']}\t{data['cumulative_unique_transcripts']}\t")
-                f.write(f"{data['total_transcripts_so_far']}\n")    
-        print(f"饱和曲线数据已保存至: {output_file}")        
-    
-    def _generate_summary_report(self, output_dir):
-        """生成处理摘要报告"""
-        output_file = os.path.join(output_dir, "file3_coding_transcripts_processing_summary.txt")        
-        with open(output_file, 'w') as f:
-            f.write("=== 编码转录本处理摘要报告 ===\n\n")
-            f.write(f"处理文件对数: {self.processed_files}\n")
-            f.write(f"总编码转录本数: {len(self.all_transcripts)}\n")
-            f.write(f"唯一编码转录本结构数: {len(self.fingerprint_dict)}\n")         
-            # 支持文件数分布
-            count_distribution = defaultdict(int)
-            for info in self.fingerprint_dict.values():
-                count_distribution[info['count']] += 1            
-            f.write("支持文件数分布:\n")
-            for count in sorted(count_distribution.keys(), reverse=True):
-                freq = count_distribution[count]
-                percentage = (freq / len(self.fingerprint_dict)) * 100
-                f.write(f"  支持 {count:2d} 个文件: {freq:4d} 个唯一编码转录本 ({percentage:.1f}%)\n")            
-            # 染色体分布
-            chrom_distribution = defaultdict(int)
-            for info in self.fingerprint_dict.values():
-                chrom = info['representative'].chrom
-                chrom_distribution[chrom] += 1            
-            f.write(f"\n染色体分布 (共 {len(chrom_distribution)} 条染色体):\n")
-            for chrom in sorted(chrom_distribution.keys()):
-                f.write(f"  {chrom}: {chrom_distribution[chrom]} 个唯一编码转录本\n")        
-        print(f"处理摘要报告已保存至: {output_file}")
+    candidate_index = defaultdict(list)
+    for tid, info in transcript_info.items():
+        exons_region = transcript_exon_region[tid]
+        if not exons_region:
+            continue
+        key = (info['chrom'], info['strand'])
+        candidate_index[key].append((tid, exons_region))
+
+    df = pd.read_excel(ms_file, sheet_name="NCP", engine="openpyxl")
+    peptides = list(df[['chrom', 'start', 'end', 'strand']].itertuples(index=False, name=None))
+    counter = Counter()
+    with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker, initargs=(candidate_index,)) as ex:
+        for hit_list in tqdm(ex.map(_worker_match_one_peptide, peptides), total=len(peptides), desc="Matching peptides (parallel)"):
+            if hit_list:
+                counter.update(hit_list)
+    transcript_peptide_count = {tid: counter.get(tid, 0) for tid in transcript_lines.keys()}
+    return transcript_lines, transcript_peptide_count
+
+def generate_outputs(transcript_lines, transcript_peptide_count, output_prefix):
+    gff_output_file = f"{output_prefix}_transcripts_with_peptides.gtf"
+    with open(gff_output_file, 'w') as f:
+        f.write(f"##date {datetime.now().strftime('%Y-%m-%d')}\n")
+        f.write("##source PeptideSupportedTranscripts\n")
+        for tid, lines in transcript_lines.items():
+            pc = transcript_peptide_count.get(tid, 0)
+            if pc > 0:
+                for line in lines:
+                    if (not line.startswith('#')) and ('\ttranscript\t' in line):
+                        if line.endswith(';') or ';' in line:
+                            line = line.rstrip() + f' peptide_count "{pc}";'
+                        else:
+                            line = line.rstrip() + f' peptide_count "{pc}";'
+                    f.write(line + '\n')
+                f.write("###\n")
+
+    # 2) 统计
+    stats_output_file = f"{output_prefix}_peptide_count_distribution.csv"
+    cnt = Counter(transcript_peptide_count.values())
+    pd.DataFrame(
+        [{'peptide_count': k, 'transcript_count': v} for k, v in sorted(cnt.items())]
+    ).to_csv(stats_output_file, index=False)
 
 def main():
-    gtf_directory = ""
-    cpc2_directory = ""
-    plek_directory = ""
-    output_directory = ""
-    processor = TranscriptProcessor()
-    file_pairs = processor.find_matching_file_pairs(
-        gtf_directory, 
-        cpc2_directory, 
-        plek_directory
-    )     
-    print(f"找到 {len(file_pairs)} 对匹配的文件")
-    processor.process_file_pairs(file_pairs)
-    processor.generate_output_files(output_directory)
-    print("\n=== 处理完成 ===")
-    print(f"输出文件保存在: {output_directory}")
-    print("生成的文件:")
-    print("  1. nonredundant_coding_transcripts.gff3 - 去重合并的GFF3文件")
-    print("  2. nonredundant_coding_transcripts.fasta - 去重合并的FASTA文件") 
-    print("  3. saturation_curve_data.tsv - 饱和曲线数据")
-    print("  4. processing_summary.txt - 处理摘要报告")
+    ms_file = "/media/wanglab/caca/Eu_peptido/20251018imeta/file/00raw/Eu_sp_finally.xlsx"
+    gtf_file = "/media/wanglab/caca/Eu_peptido/20251018imeta/file/00raw/output/filter_file1_nonredundant_coding_transcripts.gtf"
+    output_prefix = "/media/wanglab/caca/Eu_peptido/20251018imeta/file/01new_gene/analysis_results/filter_by_ms"
+    transcript_lines, transcript_peptide_count = filter_by_ms(
+        ms_file, gtf_file, workers=100
+    )
+    generate_outputs(transcript_lines, transcript_peptide_count, output_prefix)
 
 if __name__ == "__main__":
     main()
