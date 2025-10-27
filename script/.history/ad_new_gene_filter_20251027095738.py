@@ -5,9 +5,9 @@ from tqdm import tqdm
 
 def build_group_samples(sample_df):
     group_samples = defaultdict(list)
-    cols = {c : c for c in sample_df.columns}
-    sample_col = cols['Sample']
-    group_col = cols['Group']
+    cols = {c.lower(): c for c in sample_df.columns}
+    sample_col = cols['sample']
+    group_col = cols['group']
     for _, row in sample_df.iterrows():
         sample_id = row[sample_col]
         group_name = row[group_col]
@@ -15,11 +15,11 @@ def build_group_samples(sample_df):
     return dict(group_samples)
 
 def prepare_expr_df(expression_df, group_samples):
-    expression_df = expression_df.set_index('Geneid')
+    cols = [c.lower() for c in expression_df.columns]
+    expression_df = expression_df.set_index(expression_df.columns[cols.index('geneid')])
     expression_df = expression_df.dropna(axis=1, how='all')
-    expression_df.columns = expression_df.columns.astype(str)
-    wanted = set(str(x) for lst in group_samples.values() for x in lst)
-    keep_cols = [c for c in expression_df.columns if c in wanted]
+    wanted = set(sum(group_samples.values(), []))
+    keep_cols = [c for c in expression_df.columns if str(c) in wanted]
     return expression_df.loc[:, keep_cols]
 
 def calculate_cv_by_group(expression_df, group_samples):
@@ -27,15 +27,12 @@ def calculate_cv_by_group(expression_df, group_samples):
     for group_name, sample_ids in group_samples.items():
         cols = [s for s in sample_ids if s in expression_df.columns]
         group_expr = expression_df.loc[:, cols]
-        filtered = group_expr[group_expr.min(axis=1) >= 5]
-        if filtered.empty:
-            continue
-        mean_expr = filtered.mean(axis=1)
-        std_expr  = filtered.std(axis=1)
+        mean_expr = group_expr.mean(axis=1)
+        std_expr = group_expr.std(axis=1) 
         cv = std_expr / (mean_expr + 1e-6)
         cv_results[group_name] = cv
     cv_df = pd.DataFrame(cv_results)
-    cv_df.index.name = expression_df.index.name or "Geneid"
+    cv_df.index.name = expression_df.index.name or "geneid"
     return cv_df
 
 def selected_new_genes(cv_df, prefix_annot, prefix_new):
@@ -46,7 +43,7 @@ def selected_new_genes(cv_df, prefix_annot, prefix_new):
     new_cv   = cv_df.loc[mask_new]
     thresholds_per_group = annot_cv.max(axis = 0)
     valid_groups = thresholds_per_group.dropna().index.tolist()
-    meets_all = new_cv[valid_groups].le(thresholds_per_group[valid_groups], axis=1).all(axis=1)
+    meets_all = new_cv[valid_groups].ge(thresholds_per_group[valid_groups], axis=1).all(axis=1)
     selected = new_cv.loc[meets_all]
     return thresholds_per_group, selected    
 
@@ -62,7 +59,7 @@ def calculate_cv_count_and_filter(expression_df, sample_file, output_dir):
     sel_out = os.path.join(output_dir, "selected_new_genes_meet_all_groups.tsv")
     cv_df.to_csv(cv_out, sep='\t', index_label='gene_id')
     thr_per_group.to_csv(thr_out, sep='\t', header=['threshold'])
-    selected_new_all_groups.to_csv(sel_out, sep='\t', index_label='Gene_id')
+    selected_new_all_groups.to_csv(sel_out, sep='\t', index_label='gene_id')
 
 def merge_count_file(rnaseq_quantitative, sample_file, merge_gene_matrix, gene_id_col = "Geneid"):
     count_file = pd.read_excel(sample_file, sheet_name="Sheet2")
@@ -73,25 +70,25 @@ def merge_count_file(rnaseq_quantitative, sample_file, merge_gene_matrix, gene_i
         file_path = os.path.join(rnaseq_quantitative, sample_name)
         df = pd.read_csv(file_path, sep = '\t', comment = "#")
         counts = df[[gene_id_col, df.columns[-1]]]
-        counts.columns = ['Geneid', file]
+        counts.columns = ['geneid', file]
         if merged_df is None:
             merged_df = counts
         else:
-            merged_df = pd.merge(merged_df, counts, on='Geneid', how='outer')
+            merged_df = pd.merge(merged_df, counts, on='geneid', how='outer')
     if merged_df is not None:
         print(f"\n合并后数据维度: {merged_df.shape}")
-        if merged_df.duplicated('Geneid').any():
+        if merged_df.duplicated('geneid').any():
             print(f"警告：存在重复基因ID，将取第一个出现的值")
-            merged_df = merged_df.drop_duplicates('Geneid')
+            merged_df = merged_df.drop_duplicates('geneid')
         merged_df.to_csv(merge_gene_matrix, index=False)
-        return merged_df
+        return merged_df     
 
 def main():
     rnaseq_quantitative_dir = ""
     sample_file = ""
     output_dir = ""
-    merge_gene_matrix = os.path.join(output_dir, "merge_gene_matrix.csv")
 
+    merge_gene_matrix = os.path.join(output_dir, "merge_gene_matrix.csv")
     quantitative_df = merge_count_file(rnaseq_quantitative_dir, sample_file, merge_gene_matrix)
     calculate_cv_count_and_filter(quantitative_df, sample_file, output_dir)
 
