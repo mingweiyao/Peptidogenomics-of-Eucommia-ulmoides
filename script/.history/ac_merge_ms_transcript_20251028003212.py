@@ -104,16 +104,11 @@ def filter_by_ms(ms_file, gtf_file, workers=None):
     df = pd.read_excel(ms_file, sheet_name="NCP", engine="openpyxl")
     df['start'] = df['start'].astype(int)
     df['end']   = df['end'].astype(int)
+    peptides = list(df[['peptide_id', 'chrom', 'start', 'end', 'strand']].itertuples(index=False, name=None))
     counter = Counter()
     unmapped_peptides = []
-    peptide_records = df[['peptide_id','chrom','start','end','strand']].to_dict(orient='records')
-    peptides_for_work = [(r['chrom'], r['start'], r['end'], r['strand']) for r in peptide_records]
     with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker, initargs=(candidate_index,)) as ex:
-        for rec, hit_list in tqdm(
-            zip(peptide_records, ex.map(_worker_match_one_peptide, peptides_for_work)),
-            total=len(peptide_records),
-            desc="Matching peptides (parallel)"
-        ):
+        for rec, hit_list in tqdm(ex.map(_worker_match_one_peptide, peptides), total=len(peptides), desc="Matching peptides (parallel)"):
             if hit_list:
                 counter.update(hit_list)
             else:
@@ -148,7 +143,7 @@ def generate_outputs(transcript_lines, transcript_peptide_count, unmapped_peptid
     if unmapped_peptides:
         write_unmapped_peptides_gtf(unmapped_peptides, output_prefix)
     else:
-        print("所有肽段都有命中（未生成 unmapped GTF）。")  
+        print("所有肽段都有命中（未生成 unmapped GTF）。")    
 
 def main():
     ms_file = "/media/wanglab/caca/Eu_peptido/20251018imeta/file_no_transdecoder/00raw/Eu_sp_finally.xlsx"

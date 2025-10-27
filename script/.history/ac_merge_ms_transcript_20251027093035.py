@@ -23,31 +23,6 @@ def _worker_match_one_peptide(peptide_tuple):
                 break                  
     return hit_ids
 
-def write_unmapped_peptides_gtf(unmapped_peptides, output_prefix):
-    out = f"{output_prefix}_unmapped_peptides.gtf"
-    with open(out, 'w') as f:
-        f.write(f"##date {datetime.now().strftime('%Y-%m-%d')}\n")
-        f.write("##source UnmappedPeptides\n")
-        for i, rec in enumerate(unmapped_peptides, 1):
-            peptide_id = str(rec.get('peptide_id'))
-            chrom  = str(rec.get('chrom'))
-            start  = int(rec.get('start'))
-            end    = int(rec.get('end'))
-            strand = str(rec.get('strand', '.')) if str(rec.get('strand', '.')) in ['+','-','.'] else '.'
-            attrs = [f'transcript_id "{peptide_id}";', f'gene_id "{peptide_id}";']
-            attr_str = ' '.join(attrs)
-            transcript_line = (
-                f"{chrom}\tUnmappedPeptides\ttranscript\t"
-                f"{start}\t{end}\t.\t{strand}\t.\t{attr_str}\n"
-            )
-            f.write(transcript_line)
-            exon_line = (
-                f"{chrom}\tUnmappedPeptides\texon\t"
-                f"{start}\t{end}\t.\t{strand}\t.\t{attr_str}\n"
-            )
-            f.write(exon_line)
-    print(f"未映射肽段的GTF已保存: {out}")
-
 def filter_by_ms(ms_file, gtf_file, workers=None):
     # 读取 GTF 文件
     transcript_lines = defaultdict(list)
@@ -104,24 +79,16 @@ def filter_by_ms(ms_file, gtf_file, workers=None):
     df = pd.read_excel(ms_file, sheet_name="NCP", engine="openpyxl")
     df['start'] = df['start'].astype(int)
     df['end']   = df['end'].astype(int)
+    peptides = list(df[['chrom', 'start', 'end', 'strand']].itertuples(index=False, name=None))
     counter = Counter()
-    unmapped_peptides = []
-    peptide_records = df[['peptide_id','chrom','start','end','strand']].to_dict(orient='records')
-    peptides_for_work = [(r['chrom'], r['start'], r['end'], r['strand']) for r in peptide_records]
     with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker, initargs=(candidate_index,)) as ex:
-        for rec, hit_list in tqdm(
-            zip(peptide_records, ex.map(_worker_match_one_peptide, peptides_for_work)),
-            total=len(peptide_records),
-            desc="Matching peptides (parallel)"
-        ):
+        for hit_list in tqdm(ex.map(_worker_match_one_peptide, peptides), total=len(peptides), desc="Matching peptides (parallel)"):
             if hit_list:
                 counter.update(hit_list)
-            else:
-                unmapped_peptides.append(rec)
     transcript_peptide_count = {tid: counter.get(tid, 0) for tid in transcript_lines.keys()}
-    return transcript_lines, transcript_peptide_count, unmapped_peptides
+    return transcript_lines, transcript_peptide_count
 
-def generate_outputs(transcript_lines, transcript_peptide_count, unmapped_peptides, output_prefix):
+def generate_outputs(transcript_lines, transcript_peptide_count, output_prefix):
     gff_output_file = f"{output_prefix}_transcripts_with_peptides.gtf"
     with open(gff_output_file, 'w') as f:
         f.write(f"##date {datetime.now().strftime('%Y-%m-%d')}\n")
@@ -145,19 +112,14 @@ def generate_outputs(transcript_lines, transcript_peptide_count, unmapped_peptid
         [{'peptide_count': k, 'transcript_count': v} for k, v in sorted(cnt.items())]
     ).to_csv(stats_output_file, index=False)
 
-    if unmapped_peptides:
-        write_unmapped_peptides_gtf(unmapped_peptides, output_prefix)
-    else:
-        print("所有肽段都有命中（未生成 unmapped GTF）。")  
-
 def main():
     ms_file = "/media/wanglab/caca/Eu_peptido/20251018imeta/file_no_transdecoder/00raw/Eu_sp_finally.xlsx"
     gtf_file = "/media/wanglab/caca/Eu_peptido/20251018imeta/file_no_transdecoder/00raw/output/file1_nonredundant_coding_transcripts.gtf"
     output_prefix = "/media/wanglab/caca/Eu_peptido/20251018imeta/file_no_transdecoder/01new_gene/analysis_results/filter_by_ms"
-    transcript_lines, transcript_peptide_count, unmapped_peptides = filter_by_ms(
+    transcript_lines, transcript_peptide_count = filter_by_ms(
         ms_file, gtf_file, workers=70
     )
-    generate_outputs(transcript_lines, transcript_peptide_count, unmapped_peptides, output_prefix)
+    generate_outputs(transcript_lines, transcript_peptide_count, output_prefix)
 
 if __name__ == "__main__":
     main()
