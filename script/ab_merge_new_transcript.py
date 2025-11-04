@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-# ---------- 可选：尽量用 polars，极快；没有则回退到 pandas ----------
 try:
     import polars as pl
     _HAS_POLARS = True
@@ -38,31 +37,13 @@ class Transcript:
     def structure_key(self):
         return (self.chrom, self.strand, tuple(self.exons))
 
-def load_coding_ids(cpc2_file: str, plek_file: str):
-    coding = set()
-    try:
-        df_cpc2 = pd.read_csv(cpc2_file, sep='\t', header=0, dtype='string', engine='c')
-    except Exception:
-        df_cpc2 = pd.read_csv(cpc2_file, sep='\t', header=0, dtype='string')
-    coding.update(
-        df_cpc2.loc[df_cpc2.iloc[:, -1].eq('coding'), df_cpc2.columns[0]]
-        .dropna().tolist()
-    )
-    try:
-        df_plek = pd.read_csv(plek_file, sep='\t', header=None, usecols=[0, 2], dtype='string', engine='c')
-    except Exception:
-        df_plek = pd.read_csv(plek_file, sep='\t', header=None, usecols=[0, 2], dtype='string')
-    ids = df_plek.loc[df_plek[0].eq('Coding'), 2].str.extract(RE_FASTA_ID, expand=False)
-    coding.update(ids.dropna().tolist())
-    return coding
-
-def parse_gtf_fast(gtf_file: str, coding_set: set, source_name: str):
+def parse_gtf_fast(gtf_file: str, source_name: str):
     if _HAS_POLARS:
-        return _parse_gtf_polars(gtf_file, coding_set, source_name)
+        return _parse_gtf_polars(gtf_file, source_name)
     else:
-        return _parse_gtf_pandas(gtf_file, coding_set, source_name)
+        return _parse_gtf_pandas(gtf_file, source_name)
 
-def _parse_gtf_polars(gtf_file: str, coding_set: set, source_name: str):
+def _parse_gtf_polars(gtf_file: str, source_name: str):
     df = pl.read_csv(
         gtf_file,
         separator="\t",
@@ -85,8 +66,6 @@ def _parse_gtf_polars(gtf_file: str, coding_set: set, source_name: str):
         rex(RE_REF_ID).alias('reference_id'),
         rex(RE_REF_GENE_ID).alias('ref_gene_id'),
     ])
-    exons = exons.filter(pl.col('transcript_id').is_in(list(coding_set)))
-    trans = trans.filter(pl.col('transcript_id').is_in(list(coding_set)))
     trans_info = (
         trans
         .unique(subset=['transcript_id'], keep='first')
@@ -135,7 +114,7 @@ def _parse_gtf_polars(gtf_file: str, coding_set: set, source_name: str):
         ))
     return transcripts
 
-def _parse_gtf_pandas(gtf_file: str, coding_set: set, source_name: str):
+def _parse_gtf_pandas(gtf_file: str, source_name: str):
     try:
         df = pd.read_csv(
             gtf_file, sep='\t', comment='#', header=None,
@@ -161,8 +140,6 @@ def _parse_gtf_pandas(gtf_file: str, coding_set: set, source_name: str):
     trans['gene_id']       = extract(trans['attrs'], RE_GENE_ID)
     trans['reference_id']  = extract(trans['attrs'], RE_REF_ID)
     trans['ref_gene_id']   = extract(trans['attrs'], RE_REF_GENE_ID)
-    exons = exons[exons['transcript_id'].isin(coding_set)]
-    trans = trans[trans['transcript_id'].isin(coding_set)]
     trans_info = (trans.drop_duplicates('transcript_id')
                       .set_index('transcript_id')[['gene_id','reference_id','ref_gene_id','chrom','strand']])
     transcripts = []
@@ -185,8 +162,7 @@ def _parse_gtf_pandas(gtf_file: str, coding_set: set, source_name: str):
 
 def _process_one_pair(pair):
     base = pair['base_name']
-    coding = load_coding_ids(pair['cpc2'], pair['plek'])
-    transcripts = parse_gtf_fast(pair['gtf'], coding, base)
+    transcripts = parse_gtf_fast(pair['gtf'], base)
     local = {}
     for t in transcripts:
         key = t.structure_key()
@@ -210,7 +186,7 @@ class FastTranscriptProcessor:
         self.saturation_data = []
 
     @staticmethod
-    def find_matching_file_pairs(gtf_dir, cpc2_dir, plek_dir):
+    def find_matching_file_pairs(gtf_dir):
         def index_dir(dirp, exts):
             m = {}
             for f in os.listdir(dirp):
@@ -219,12 +195,9 @@ class FastTranscriptProcessor:
                     m[base] = os.path.join(dirp, f)
             return m
         gtf = index_dir(gtf_dir, ['.gtf'])
-        cpc2 = index_dir(cpc2_dir, ['.txt', '.tsv'])
-        plek = index_dir(plek_dir, ['.txt', '.tsv'])
         pairs = []
         for b in sorted(gtf.keys()):
-            if b in cpc2 and b in plek:
-                pairs.append({'gtf': gtf[b], 'cpc2': cpc2[b], 'plek': plek[b], 'base_name': b})
+            pairs.append({'gtf': gtf[b], 'base_name': b})
         return pairs
 
     def process_file_pairs(self, file_pairs):
@@ -276,7 +249,7 @@ class FastTranscriptProcessor:
         self._write_summary(output_dir)
 
     def _write_nonredundant_gtf(self, output_dir):
-        out = os.path.join(output_dir, "file1_nonredundant_coding_transcripts.gtf")
+        out = os.path.join(output_dir, "file1_nonredundant_transcripts.gtf")
         lines = []
         for k, info in sorted(self.fingerprint_dict.items(), key=lambda x: x[1]['count'], reverse=True):
             t = info['representative']
@@ -308,7 +281,7 @@ class FastTranscriptProcessor:
         print(f"饱和曲线数据已保存: {out}")
 
     def _write_summary(self, output_dir):
-        out = os.path.join(output_dir, "file3_coding_transcripts_processing_summary.txt")
+        out = os.path.join(output_dir, "file3_transcripts_processing_summary.txt")
         lines = []
         lines.append("=== 编码转录本处理摘要报告 ===\n\n")
         lines.append(f"处理文件对数: {self.processed_files}\n")
@@ -334,12 +307,10 @@ class FastTranscriptProcessor:
         print(f"处理摘要报告已保存: {out}")
 
 def main():
-    gtf_dir = "/media/wanglab/caca/Eu_peptido/20251018imeta/file_no_transdecoder/00raw/predict_gtf"
-    cpc2_dir = "/media/wanglab/caca/Eu_peptido/20251018imeta/file_no_transdecoder/00raw/predict_cpc2"
-    plek_dir = "/media/wanglab/caca/Eu_peptido/20251018imeta/file_no_transdecoder/00raw/predict_plek"
-    out_dir = "/media/wanglab/caca/Eu_peptido/20251018imeta/file_no_transdecoder/00raw/output"
+    gtf_dir = "/data/Eu/Eu_rnaseq/05new_transcript"
+    out_dir = "/data/Eu/Eu_rnaseq/output_test"
     proc = FastTranscriptProcessor()
-    pairs = proc.find_matching_file_pairs(gtf_dir, cpc2_dir, plek_dir)
+    pairs = proc.find_matching_file_pairs(gtf_dir)
     print(f"找到 {len(pairs)} 对匹配的文件")
     proc.process_file_pairs(pairs)
     proc.generate_outputs(out_dir)

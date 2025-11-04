@@ -71,6 +71,8 @@ def merge_count_file(rnaseq_quantitative, sample_file, merge_gene_matrix, gene_i
         file = row['Sample']
         sample_name = f"{file}_counts.txt"
         file_path = os.path.join(rnaseq_quantitative, sample_name)
+        if not os.path.exists(file_path):
+            continue
         df = pd.read_csv(file_path, sep = '\t', comment = "#")
         counts = df[[gene_id_col, df.columns[-1]]]
         counts.columns = ['Geneid', file]
@@ -87,9 +89,9 @@ def merge_count_file(rnaseq_quantitative, sample_file, merge_gene_matrix, gene_i
         return merged_df
 
 def main():
-    rnaseq_quantitative_dir = ""
-    sample_file = ""
-    output_dir = ""
+    rnaseq_quantitative_dir = "/media/wanglab/caca/Eu_peptido/20251018imeta/file_no_transdecoder/01new_gene/quantative_test/fcount"
+    sample_file = "/media/wanglab/caca/Eu_peptido/20251018imeta/file_no_transdecoder/00raw/Total_rna_seq.xlsx"
+    output_dir = "/media/wanglab/caca/Eu_peptido/20251018imeta/file_no_transdecoder/01new_gene/quantative_test"
     merge_gene_matrix = os.path.join(output_dir, "merge_gene_matrix.csv")
 
     quantitative_df = merge_count_file(rnaseq_quantitative_dir, sample_file, merge_gene_matrix)

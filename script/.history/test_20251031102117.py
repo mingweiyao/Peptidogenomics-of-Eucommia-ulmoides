@@ -33,8 +33,8 @@ def parse_gtf_exons(gtf_file):
                 end = int(end)
                 exon_length = end - start + 1
                 exon_lengths.append(exon_length)
-                if exon_length == 1:
-                    print(f"{attrs}")
+            if exon_length == 1:
+                print(f"{attrs}")
     return exon_lengths
 
 def plot_exon_length_distribution(exon_lengths, output_file):
