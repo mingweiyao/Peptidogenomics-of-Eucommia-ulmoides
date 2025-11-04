@@ -63,15 +63,18 @@ from Bio import SeqIO
 RE_TRANSCRIPT_ID = re.compile(r'transcript_id "([^"]+)"')
 RE_GENE_ID       = re.compile(r'gene_id "([^"]+)"')
 
-_PEP_BUCKET = None
-_START_BUCKET = None
-_TID2KEY = None
-_TID2EXON = None
+# ========== 全局（仅 worker 用） ==========
+_PEP_BUCKET = None          # (chrom,strand) -> list of {'start','end','peptide_id', 'pep_seq'(可无)}
+_START_BUCKET = None        # (chrom,strand) -> sorted list of starts
+_TID2KEY = None             # tid -> (chrom,strand)
+_TID2EXON = None            # tid -> (exon_start, exon_end)
 
+# ========== 参数（可按需调整） ==========
 UPSTREAM_ATG_SEARCH_BP = 3000   # 非 M 起始时，上游搜 ATG 的最大范围
-FASTA_LINE_WRAP = 100
+FASTA_LINE_WRAP = 60            # 输出FASTA换行宽度
 COVERAGE_THRESHOLD = 0.10       # 覆盖率阈值：<10% 的转录本剔除
 
+# ----------------- Worker 初始化 -----------------
 def _init_worker(pep_bucket, start_bucket, tid2key, tid2exon):
     global _PEP_BUCKET, _START_BUCKET, _TID2KEY, _TID2EXON
     _PEP_BUCKET  = pep_bucket
@@ -79,11 +82,20 @@ def _init_worker(pep_bucket, start_bucket, tid2key, tid2exon):
     _TID2KEY = tid2key
     _TID2EXON = tid2exon
 
+# ----------------- 子进程：统计与映射 -----------------
 def _worker_count_transcript_chunk(tid_chunk):
+    """
+    返回：
+      counts: Counter[tid] = 匹配肽段个数（去重按 peptide_id）
+      mapped_ids: set(peptide_id)
+      map_pairs: list[(peptide_id, tid)]
+      map_intervals: list[(tid, peptide_id, start, end)]
+    """
     counts = Counter()
     mapped_ids = set()
     map_pairs = []
-    map_intervals = []
+    map_intervals = []   # 供主进程计算覆盖率/最小最大区间
+
     for tid in tid_chunk:
         key = _TID2KEY.get(tid)
         if key is None:
@@ -92,14 +104,18 @@ def _worker_count_transcript_chunk(tid_chunk):
         starts = _START_BUCKET.get(key, [])
         if not peps or not starts:
             continue
+
         exon_start, exon_end = _TID2EXON.get(tid, (None, None))
         if exon_start is None:
             continue
+
         pos = bisect_left(starts, exon_start)
         seen_pid = set()
+
         j = pos
         while j < len(peps) and peps[j]['start'] <= exon_end:
             p = peps[j]
+            # 仅接受完全包含于外显子的肽段
             if p['end'] <= exon_end:
                 pid = p['peptide_id']
                 if pid not in seen_pid:
@@ -109,6 +125,7 @@ def _worker_count_transcript_chunk(tid_chunk):
                     map_pairs.append((pid, tid))
                     map_intervals.append((tid, pid, p['start'], p['end']))
             j += 1
+
     return counts, mapped_ids, map_pairs, map_intervals
 
 def parse_gtf_transcript(gtf_file):
@@ -153,37 +170,61 @@ def parse_gtf_transcript(gtf_file):
             tid2key[tid] = (info['chrom'], info['strand'])
     return transcript_lines_single, tid2exon, tid2key
 
+# ----------------- 读取肽段并分桶 -----------------
+def detect_pep_seq_column(df: pd.DataFrame):
+    for c in ['peptide_seq', 'sequence', 'peptide', 'Peptide', 'AASequence']:
+        if c in df.columns:
+            return c
+    return None
+
 def build_peptide_buckets(ms_file):
     df = pd.read_excel(ms_file, sheet_name="NCP")
     df['start'] = df['start'].astype(int)
     df['end']   = df['end'].astype(int)
+
+    pep_seq_col = detect_pep_seq_column(df)
+    pep_seq_map = {}
+    if pep_seq_col:
+        # 预构建 id->seq 映射，避免循环中频繁 df 查询
+        tmp = df[['peptide_id', pep_seq_col]].drop_duplicates()
+        pep_seq_map = dict(zip(tmp['peptide_id'].astype(str), tmp[pep_seq_col].astype(str)))
+
     pep_bucket = defaultdict(list)
-    for rec in df[['peptide_id', 'chrom', 'start', 'end', 'strand', 'sequence']].to_dict(orient='records'):
+    for rec in df[['peptide_id', 'chrom', 'start', 'end', 'strand']].to_dict(orient='records'):
         key = (str(rec['chrom']), str(rec['strand']))
         record = {
             'start': int(rec['start']),
             'end': int(rec['end']),
-            'peptide_id': str(rec['peptide_id']),
-            'sequence': str(rec['sequence'])
+            'peptide_id': str(rec['peptide_id'])
         }
+        if pep_seq_col:
+            record['pep_seq'] = pep_seq_map.get(record['peptide_id'])
         pep_bucket[key].append(record)
+
     start_bucket = {}
     for key, lst in pep_bucket.items():
         lst.sort(key=lambda x: x['start'])
         start_bucket[key] = [p['start'] for p in lst]
-    return df, pep_bucket, start_bucket
+    return df, pep_bucket, start_bucket, pep_seq_col
 
+# ----------------- FASTA 读取 -----------------
 def parse_genome_file(genome_file):
+    if not genome_file:
+        raise ValueError("必须提供 genome FASTA 文件路径。")
     genome_sequence = {}
     for rec in SeqIO.parse(genome_file, "fasta"):
         genome_sequence[rec.id] = str(rec.seq).upper()
+    if not genome_sequence:
+        raise ValueError("未能从 FASTA 读取到任何序列。请检查路径与文件格式。")
     return genome_sequence
 
 # ----------------- 工具：序列、反向互补、翻译、寻找起止密码子 -----------------
 COMPLEMENT = str.maketrans('ACGTNacgtn','TGCANtgcan')
 STOP_CODONS = {'TAA','TAG','TGA'}
+
 def revcomp(seq):
     return seq.translate(COMPLEMENT)[::-1]
+
 def get_genomic_seq(genome, chrom, start, end, strand):
     """
     1-based, inclusive coordinates.
@@ -228,13 +269,19 @@ def find_nearest_upstream_atg(seq, frame=0, ref_pos_nt=0, max_up_bp=3000):
 
 def filter_and_extract_cds(ms_file, gtf_file, genome_file, workers=40, chunk_size=5000):
     transcript_lines, tid2exon, tid2key = parse_gtf_transcript(gtf_file)
-    peptide_df, pep_bucket, start_bucket = build_peptide_buckets(ms_file)
+
+    # 2) 肽段桶
+    peptide_df, pep_bucket, start_bucket, pep_seq_col = build_peptide_buckets(ms_file)
+
+    # 3) 多进程映射（完全包含）
     tids = list(transcript_lines.keys())
     chunks = [tids[i:i+chunk_size] for i in range(0, len(tids), chunk_size)]
+
     total_counts = Counter()
     mapped_peptide_ids = set()
     mapped_pairs_all = []
-    per_tid_intervals = defaultdict(list)
+    per_tid_intervals = defaultdict(list)  # tid -> list of (start,end,peptide_id)
+
     with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker,
                              initargs=(pep_bucket, start_bucket, tid2key, tid2exon)) as pool:
         futs = [pool.submit(_worker_count_transcript_chunk, ch) for ch in chunks]
@@ -246,6 +293,7 @@ def filter_and_extract_cds(ms_file, gtf_file, genome_file, workers=40, chunk_siz
             for tid, pid, s, e in intervals_part:
                 per_tid_intervals[tid].append((s, e, pid))
 
+    # 计算覆盖率（并区间长度 / 转录本长度），并过滤 <COVERAGE_THRESHOLD
     def union_len(intervals):
         if not intervals:
             return 0
@@ -260,20 +308,26 @@ def filter_and_extract_cds(ms_file, gtf_file, genome_file, workers=40, chunk_siz
                 cur_s, cur_e = s, e
         total += (cur_e - cur_s + 1)
         return total
+
     transcript_len = {tid: (tid2exon[tid][1] - tid2exon[tid][0] + 1) for tid in tids}
     tid2_cov = {}
     for tid in tids:
         cov_nt = union_len(per_tid_intervals[tid])
         L = transcript_len[tid]
         tid2_cov[tid] = (cov_nt / L) if L > 0 else 0.0
+
     kept_tids = [tid for tid in tids if tid2_cov.get(tid, 0.0) >= COVERAGE_THRESHOLD]
 
+    # 读基因组序列
     genome = parse_genome_file(genome_file)
-    tid2_cds_seq = {}
-    tid2_cds_span = {}
-    tid2_pep_minmax = {}
-    tid2_start_is_m = {}
-    tid2_reason = {}
+
+    # 4) 按规则推断并提取 CDS（仅对 kept_tids）
+    tid2_cds_seq = {}       # tid -> CDS DNA 序列（5'->3'，与转录本方向一致）
+    tid2_cds_span = {}      # tid -> (cds_genome_start, cds_genome_end) 在基因组上的范围（1-based, inclusive）
+    tid2_pep_minmax = {}    # tid -> (pep_min_start, pep_max_end)（基因组坐标，小到大）
+    tid2_start_is_m = {}    # tid -> bool（“最靠5′的肽段”是否以M起始）
+    tid2_reason = {}        # tid -> 提示（无法提取时说明）
+
     for tid in kept_tids:
         chrom, strand = tid2key[tid]
         exon_start, exon_end = tid2exon[tid]
@@ -281,19 +335,31 @@ def filter_and_extract_cds(ms_file, gtf_file, genome_file, workers=40, chunk_siz
         if not intervals:
             tid2_reason[tid] = "无肽段或被覆盖率阈值过滤"
             continue
+
         pep_min = min(s for s,_,_ in intervals)
         pep_max = max(e for _,e,_ in intervals)
         tid2_pep_minmax[tid] = (pep_min, pep_max)
+
+        # 转录本方向序列：+链为 exon_start..exon_end，-链为其反向互补
         tx_seq = get_genomic_seq(genome, chrom, exon_start, exon_end, strand)
+
+        # 将每条肽段的“转录本起点偏移”求出，用来确定最靠5′的那条（基准肽段）
         if strand == '+':
             off_starts = [(s - exon_start, pid) for (s, e, pid) in intervals]
         else:
+            # 负链：转录本 5′->3′ 对应基因组从 exon_end 向 exon_start
+            # 肽段“转录本起点”应是其基因组 end 对应的偏移
             off_starts = [(exon_end - e, pid) for (s, e, pid) in intervals]
+
         off_starts = [x for x in off_starts if 0 <= x[0] < len(tx_seq)]
         if not off_starts:
             tid2_reason[tid] = "肽段偏移计算异常"
             continue
+
+        # 选出转录本方向最靠 5′ 的肽段（偏移最小）
         off_first, pid_first = min(off_starts, key=lambda x: x[0])
+
+        # 同时算出“最靠 3′ 的肽段末端偏移”，用于确保 CDS 覆盖全部肽段
         if strand == '+':
             off_max = pep_max - exon_start
         else:
@@ -302,10 +368,21 @@ def filter_and_extract_cds(ms_file, gtf_file, genome_file, workers=40, chunk_siz
             tid2_reason[tid] = "肽段偏移越界（超出exon）"
             continue
 
+        # frame 由“最靠5′肽段”的起点偏移决定
         frame = off_first % 3
+
+        # 仅检查“最靠5′肽段”是否以 M 起始
         start_with_M = False
-        start_with_M = str(peptide_df['sequence']).upper().startswith('M')
+        if 'peptide_id' in peptide_df.columns:
+            pep_seq_col = next((c for c in ['peptide_seq','sequence','peptide','Peptide','AASequence'] if c in peptide_df.columns), None)
+            if pep_seq_col:
+                sub = peptide_df.loc[peptide_df['peptide_id'].astype(str) == str(pid_first), pep_seq_col]
+                if not sub.empty:
+                    start_with_M = str(sub.iloc[0]).upper().startswith('M')
+
         tid2_start_is_m[tid] = start_with_M
+
+        # 决定 CDS 起点：关键改动 —— 若非M起始且上游找不到ATG，则移除此转录本
         if start_with_M:
             cds_start_off = off_first
         else:

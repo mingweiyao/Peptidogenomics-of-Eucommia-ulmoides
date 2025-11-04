@@ -113,10 +113,7 @@ def build_peptide_buckets(ms_file):
     return df, pep_bucket, start_bucket
 
 def parse_genome_file(genome_file):
-    genome_sequence = {}
-    for rec in SeqIO.parse(genome_file, "fasta"):
-        genome_sequence[rec.id] = str(rec.seq).upper()
-    return genome_sequence
+    pass
 
 def filter_and_extract_cds(ms_file, gtf_file, genome_file, workers, chunk_size):
     transcript_lines, transcript_exon, tid2key = parse_gtf_transcript(gtf_file)
@@ -138,13 +135,6 @@ def filter_and_extract_cds(ms_file, gtf_file, genome_file, workers, chunk_size):
             mapped_pairs_all.extend(pairs_part)
             for tid, pid, s, e in intervals_part:
                 per_tid_intervals[tid].append((s, e, pid))
-
-    for tid, intervals in per_tid_intervals.items():
-        frame_filter = {}
-        for s,e,pid in intervals:
-            test_len = (s - transcript_exon[tid][0]) % 3
-            frame_filter[test_len] += 1
-        
 
     def union_len(intervals):
         if not intervals:
@@ -169,22 +159,6 @@ def filter_and_extract_cds(ms_file, gtf_file, genome_file, workers, chunk_size):
     kept_tids = [tid for tid in tids if tid2_cov.get(tid, 0.0) >= COVERAGE_THRESHOLD]
 
     genome = parse_genome_file(genome_file)
-    tid2_cds_seq = {}
-    tid2_cds_span = {}
-    tid2_pep_minmax = {}
-    tids_start_is_m = {}
-    tid2_reason = {}
-    for tid in kept_tids:
-        chrom, strand = tid2key[tid]
-        exon_start, exon_end = transcript_exon[tid]
-        intervals = per_tid_intervals[tid]
-        if not intervals:
-            tid2_reason[tid] = "无肽段或被覆盖率阈值过滤"
-            continue
-        pep_min = min(s for s,_,_ in intervals)
-        pep_max = max(e for _,e,_ in intervals)
-        tid2_pep_minmax[tid] = (pep_min, pep_max)
-                           
 
 
 
