@@ -7,6 +7,8 @@ from bisect import bisect_left
 from collections import defaultdict, Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from Bio import SeqIO
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
 
 RE_TRANSCRIPT_ID = re.compile(r'transcript_id "([^"]+)"')
 RE_GENE_ID       = re.compile(r'gene_id "([^"]+)"')
@@ -17,6 +19,7 @@ _TID2KEY = None
 _TRANSCRIPT_EXON = None
 
 COVERAGE_THRESHOLD = 0.10
+FASTA_LINE_WRAP = 100
 
 def _init_worker(pep_bucket, start_bucket, tid2key, transcript_exon):
     global _PEP_BUCKET, _START_BUCKET, _TID2KEY, _TRANSCRIPT_EXON
@@ -26,9 +29,6 @@ def _init_worker(pep_bucket, start_bucket, tid2key, transcript_exon):
     _TRANSCRIPT_EXON = transcript_exon
 
 def _worker_count_transcript_chunk(tid_chunk):
-    counts = Counter()
-    mapped_ids = set()
-    map_pairs = []
     map_intervals = []
     for tid in tid_chunk:
         key = _TID2KEY.get(tid)
@@ -43,13 +43,10 @@ def _worker_count_transcript_chunk(tid_chunk):
             if p['end'] <= exon_end:
                 pid = p['peptide_id']
                 if pid not in seen_pid:
-                    counts[tid] += 1
-                    seen_pid.add(pid)
-                    mapped_ids.add(pid)
-                    map_pairs.append((pid, tid))
                     map_intervals.append((tid, pid, p['start'], p['end']))
+                    seen_pid.add(pid)
             j += 1
-    return counts, mapped_ids, map_pairs, map_intervals
+    return map_intervals
 
 def parse_gtf_transcript(gtf_file):
     transcript_lines = defaultdict(list)
@@ -98,7 +95,7 @@ def build_peptide_buckets(ms_file):
     df['end'] = df['end'].astype(int)
     pep_bucket = defaultdict(list)
     for _, rec in df.iterrows():
-        key = (str(rec['chrom']), str[rec['strand']])
+        key = (str(rec['chrom']), str(rec['strand']))
         record = {
             'start': int(rec['start']),
             'end': int(rec['end']),
@@ -118,34 +115,68 @@ def parse_genome_file(genome_file):
         genome_sequence[rec.id] = str(rec.seq).upper()
     return genome_sequence
 
+START_CODEN = {'ATG'}
+STOP_CODEN  = {'TAA','TAG','TGA'}
+START_CODEN_RES = {'CAT'}
+STOP_CODEN_RES = {'TTA', 'CTA', 'TCA'}
+def find_cds_seq(genome, chrom, strand, pep_min, pep_max, exon_start, exon_end):
+    seq = genome[chrom]
+    cds_start = None
+    cds_end = None
+    # python splic [start, end)
+    if strand == '+':
+        cod = seq[pep_min-1:pep_min+2]
+        if cod in START_CODEN:
+            cds_start = pep_min
+        else:
+            p = pep_min - 3
+            while p >= exon_start:
+                cod = seq[p-1:p+2]
+                if cod in START_CODEN:
+                    cds_start = p - 1
+                    break
+                p -= 3
+        p = pep_max
+        while p < exon_end:
+            cod = seq[p:p+3]
+            if cod in STOP_CODEN:
+                cds_end = p
+                break
+            p += 3
+    else:
+        cod = seq[pep_max-3:pep_max]
+        if cod in START_CODEN_RES:
+            cds_end = pep_max
+        else:
+            p = pep_max + 3
+            while p <= exon_end:
+                cod = seq[p-3: p]
+                if cod in START_CODEN_RES:
+                    cds_end = p
+                    break
+                p += 3
+        p = pep_min-3
+        while p >= exon_start:
+            cod = seq[p-1: p+2]
+            if cod in STOP_CODEN_RES:
+                cds_start = p - 1
+                break
+            p -= 3
+    return seq[cds_start:cds_end]
+
 def filter_and_extract_cds(ms_file, gtf_file, genome_file, workers, chunk_size):
     transcript_lines, transcript_exon, tid2key = parse_gtf_transcript(gtf_file)
     peptide_df, pep_bucket, start_bucket = build_peptide_buckets(ms_file)
     tids = list(transcript_lines.keys())
     chunks = [tids[i:i+chunk_size] for i in range(0, len(tids), chunk_size)]
-    total_counts = Counter()
-    mapped_peptide_ids = set()
-    mapped_pairs_all = []
     per_tid_intervals = defaultdict(list)
-    
     with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker,
                              initargs=(pep_bucket, start_bucket, tid2key, transcript_exon)) as pool:
         futs = [pool.submit(_worker_count_transcript_chunk, ch) for ch in chunks]
         for fu in tqdm(as_completed(futs), total=len(futs), desc="Mapping: "):
-            c_part, ids_part, pairs_part, intervals_part = fu.result()
-            total_counts.update(c_part)
-            mapped_peptide_ids |= ids_part
-            mapped_pairs_all.extend(pairs_part)
+            intervals_part = fu.result()
             for tid, pid, s, e in intervals_part:
                 per_tid_intervals[tid].append((s, e, pid))
-
-    for tid, intervals in per_tid_intervals.items():
-        frame_filter = {}
-        for s,e,pid in intervals:
-            test_len = (s - transcript_exon[tid][0]) % 3
-            frame_filter[test_len] += 1
-        
-
     def union_len(intervals):
         if not intervals:
             return 0
@@ -160,6 +191,39 @@ def filter_and_extract_cds(ms_file, gtf_file, genome_file, workers, chunk_size):
                 cur_s, cur_e = s, e
         total += (cur_e - cur_s + 1)
         return total
+    # update transcript validated by peptide in same frame
+    filt_intervals = {}
+    for tid, intervals in per_tid_intervals.items():
+        if not intervals or tid not in transcript_exon or tid not in tid2key:
+            filt_intervals[tid] = []
+            continue
+        exon_start, exon_end = transcript_exon[tid]
+        _, strand = tid2key[tid]
+        frames_info = []
+        frame_cnt = Counter()
+        for s, e, pid in intervals:
+            off = (s - exon_start) if strand == '+' else (exon_end - e)
+            if off < 0:
+                continue
+            fr = off % 3
+            frames_info.append((fr, s, e, pid))
+            frame_cnt[fr] += 1
+        if not frame_cnt:
+            filt_intervals[tid] = []
+            continue
+        max_cnt = max(frame_cnt.values())
+        candidate_frames = [fr for fr, c in frame_cnt.items() if c == max_cnt]
+        if len(candidate_frames) > 1:
+            cover_by_frame = {}
+            for fr in candidate_frames:
+                iv = [(s, e, pid) for (f, s, e, pid) in frames_info if f == fr]
+                cover_by_frame[fr] = union_len(iv)
+            max_cover = max(cover_by_frame.values())
+            candidate_frames = [fr for fr, cov in cover_by_frame.items() if cov == max_cover]
+        best_frame = min(candidate_frames)
+        filt_intervals[tid] = [(s, e, pid) for (fr, s, e, pid) in frames_info if fr == best_frame]
+    per_tid_intervals = filt_intervals
+    # filter transcript that coverage > 10%
     transcript_len = {tid: (transcript_exon[tid][1] - transcript_exon[tid][0] + 1) for tid in tids}
     tid2_cov = {}
     for tid in tids:
@@ -167,33 +231,107 @@ def filter_and_extract_cds(ms_file, gtf_file, genome_file, workers, chunk_size):
         L = transcript_len[tid]
         tid2_cov[tid] = cov_nt / L
     kept_tids = [tid for tid in tids if tid2_cov.get(tid, 0.0) >= COVERAGE_THRESHOLD]
-
+    kept_tids_intervals = {}
+    for tid in kept_tids:
+        if tid in filt_intervals:
+            kept_tids_intervals[tid] = filt_intervals[tid]
+    per_tid_intervals = kept_tids_intervals
+    total_counts = Counter()
+    mapped_peptide_ids = set()
+    mapped_pairs_all = []
+    for tid, lst in per_tid_intervals.items():
+        pid_set = {pid for _, _, pid in lst}
+        total_counts[tid] = len(pid_set)
+        mapped_peptide_ids |= pid_set
+        mapped_pairs_all.extend((pid, tid) for _, _, pid in lst)
+    # extract cds of transcript
     genome = parse_genome_file(genome_file)
     tid2_cds_seq = {}
-    tid2_cds_span = {}
-    tid2_pep_minmax = {}
-    tids_start_is_m = {}
-    tid2_reason = {}
     for tid in kept_tids:
         chrom, strand = tid2key[tid]
         exon_start, exon_end = transcript_exon[tid]
         intervals = per_tid_intervals[tid]
         if not intervals:
-            tid2_reason[tid] = "无肽段或被覆盖率阈值过滤"
             continue
         pep_min = min(s for s,_,_ in intervals)
         pep_max = max(e for _,e,_ in intervals)
-        tid2_pep_minmax[tid] = (pep_min, pep_max)
-                           
+        cds_seq = find_cds_seq(genome, chrom, strand, pep_min, pep_max, exon_start, exon_end)
+        tid2_cds_seq[tid] = cds_seq
+    transcript_peptide_count = {tid: total_counts.get(tid, 0) for tid in tids}
+    return {
+        'transcript_lines': transcript_lines,
+        'transcript_exon': transcript_exon,
+        'tid2key': tid2key,
+        'peptide_df': peptide_df,
+        'mapped_pairs_all': mapped_pairs_all,
+        'transcript_peptide_count': transcript_peptide_count,
+        'tid2_cov': tid2_cov,
+        'kept_tids': set(kept_tids),
+        'tid2_cds_seq': tid2_cds_seq
+    }
 
-
-
-
-
-
-
-
-
+def generate_output(res, output_prefix):
+    os.makedirs(os.path.dirname(output_prefix), exist_ok=True)
+    # output mapped and unmapped peptide file
+    peptide_df = res.get("peptide_df")
+    mapped_pairs_all = res.get("mapped_pairs_all", [])
+    mapped_ids = {str(pid) for pid, _ in mapped_pairs_all}
+    peptide_df = peptide_df.copy()
+    peptide_df["peptide_id"] = peptide_df["peptide_id"].astype(str)
+    mapped_peptide_df = peptide_df[peptide_df["peptide_id"].isin(mapped_ids)].reset_index(drop=True)
+    unmapped_peptides_df = peptide_df[~peptide_df["peptide_id"].isin(mapped_ids)].reset_index(drop=True)
+    mapped_peptide_df.to_csv(f"{output_prefix}.mapped_peptides.csv", index=False)
+    unmapped_peptides_df.to_csv(f"{output_prefix}.unmapped_peptides.csv", index=False)
+    # output transcript GTF file
+    transcript_lines = res.get("transcript_lines")
+    tid2_cds_seq = res.get("tid2_cds_seq")
+    tid2_cov = res.get("tid2_cov")
+    transcript_peptide_count = res.get("transcript_peptide_count")
+    tids = list(tid2_cds_seq.keys())
+    output_transcript_lines = defaultdict(list)
+    for tid in tids:
+        output_transcript_lines[tid] = transcript_lines[tid]
+    gtf_supported = f"{output_prefix}_transcripts_with_peptides.gtf"
+    with open(gtf_supported, 'w') as f:
+        f.write(f"##date {datetime.now().strftime('%Y-%m-%d')}\n")
+        f.write("##source PeptideSupportedTranscripts (coverage>=threshold AND cds_extracted)\n")
+        for tid, lines in output_transcript_lines.items():
+            cov = tid2_cov.get(tid, 0.0)
+            pc = transcript_peptide_count.get(tid, 0)
+            for line in lines:
+                out = line
+                if (not line.startswith('#')) and ('\ttranscript\t' in line):
+                    out = line.rstrip() + f' peptide_count "{pc}"; coverage "{cov:.4f}";'
+                f.write(out + '\n')
+    # output transcript cds and cds translate file
+    gtf_cds = f"{output_prefix}_gtf_cds.fasta"
+    gtf_cds_aa = f"{output_prefix}_gtf_cds_amino_acids.fasta"
+    tid2key = res.get("tid2key")
+    records_cds, records_cds_aa = [], []
+    for tid, seq_str in tid2_cds_seq.items():
+        if not seq_str:
+            continue
+        seq_obj = Seq(seq_str)
+        strand = tid2key[tid][1]
+        chrom = tid2key[tid][0]
+        records_cds.append(SeqRecord(seq_obj, id=tid, description=f"{chrom}\t{strand}"))
+        aa = seq_obj.translate() if strand == '+' else seq_obj.reverse_complement().translate()
+        records_cds_aa.append(SeqRecord(aa, id=tid, description=f"{chrom}\t{strand}"))
+    SeqIO.write(records_cds, gtf_cds, "fasta")
+    SeqIO.write(records_cds_aa, gtf_cds_aa, "fasta")
+    # output coverage and peptide count file
+    coverage_stats = []
+    for tid in tids:
+        cov = tid2_cov.get(tid, 0.0)
+        pc = transcript_peptide_count.get(tid, 0)
+        coverage_stats.append({'transcript_id': tid, 'coverage': cov, 'peptide_count': pc})
+    coverage_df = pd.DataFrame(coverage_stats)
+    coverage_df.to_csv(f"{output_prefix}_coverage_stats.csv", index=False)
+    peptide_count_stats = []
+    for tid, count in transcript_peptide_count.items():
+        peptide_count_stats.append({'transcript_id': tid, 'peptide_count': count})
+    peptide_count_df = pd.DataFrame(peptide_count_stats)
+    peptide_count_df.to_csv(f"{output_prefix}_peptide_count_stats.csv", index=False)
 
 def main():
     ms_file     = "/data/Eu/Eu_rnaseq/output_test/Eu_sp_finally.xlsx"
@@ -201,7 +339,7 @@ def main():
     genome_file = "/data/Eu/Eu_rnaseq/genome.fa"
     output_prefix = "/data/Eu/Eu_rnaseq/output_test/filter_by_ms"
     workers = 40
-    chunk_size = 600
+    chunk_size = 1000
     res = filter_and_extract_cds(
         ms_file=ms_file,
         gtf_file=gtf_file,
@@ -209,6 +347,6 @@ def main():
         workers=workers,
         chunk_size=chunk_size
     )
-
+    generate_output(res, output_prefix)
 if __name__ == "__main__":
     main()
