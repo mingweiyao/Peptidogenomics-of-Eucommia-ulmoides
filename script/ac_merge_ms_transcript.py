@@ -127,7 +127,7 @@ def find_cds_seq(genome, chrom, strand, pep_min, pep_max, exon_start, exon_end):
     if strand == '+':
         cod = seq[pep_min-1:pep_min+2]
         if cod in START_CODEN:
-            cds_start = pep_min
+            cds_start = pep_min - 1
         else:
             p = pep_min - 3
             while p >= exon_start:
@@ -159,10 +159,13 @@ def find_cds_seq(genome, chrom, strand, pep_min, pep_max, exon_start, exon_end):
         while p >= exon_start:
             cod = seq[p-1: p+2]
             if cod in STOP_CODEN_RES:
-                cds_start = p - 1
+                cds_start = p + 2
                 break
             p -= 3
-    return seq[cds_start:cds_end]
+    if cds_start is not None and cds_end is not None:
+        return seq[cds_start:cds_end]
+    else:
+        return None
 
 def filter_and_extract_cds(ms_file, gtf_file, genome_file, workers, chunk_size):
     transcript_lines, transcript_exon, tid2key = parse_gtf_transcript(gtf_file)
@@ -223,6 +226,7 @@ def filter_and_extract_cds(ms_file, gtf_file, genome_file, workers, chunk_size):
         best_frame = min(candidate_frames)
         filt_intervals[tid] = [(s, e, pid) for (fr, s, e, pid) in frames_info if fr == best_frame]
     per_tid_intervals = filt_intervals
+    tids = list(per_tid_intervals.keys())
     # filter transcript that coverage > 10%
     transcript_len = {tid: (transcript_exon[tid][1] - transcript_exon[tid][0] + 1) for tid in tids}
     tid2_cov = {}
@@ -256,18 +260,17 @@ def filter_and_extract_cds(ms_file, gtf_file, genome_file, workers, chunk_size):
         pep_min = min(s for s,_,_ in intervals)
         pep_max = max(e for _,e,_ in intervals)
         cds_seq = find_cds_seq(genome, chrom, strand, pep_min, pep_max, exon_start, exon_end)
-        tid2_cds_seq[tid] = cds_seq
-    transcript_peptide_count = {tid: total_counts.get(tid, 0) for tid in tids}
+        if cds_seq is not None:
+            tid2_cds_seq[tid] = cds_seq
+    transcript_peptide_count = {tid: total_counts.get(tid, 0) for tid in kept_tids}
     return {
-        'transcript_lines': transcript_lines,
-        'transcript_exon': transcript_exon,
-        'tid2key': tid2key,
-        'peptide_df': peptide_df,
-        'mapped_pairs_all': mapped_pairs_all,
-        'transcript_peptide_count': transcript_peptide_count,
-        'tid2_cov': tid2_cov,
-        'kept_tids': set(kept_tids),
-        'tid2_cds_seq': tid2_cds_seq
+        'transcript_lines': transcript_lines, # 所有单外显子转录本的数据行
+        'tid2key': tid2key, # 所有单外显子转录本的 tid -> (chrom, strand)
+        'peptide_df': peptide_df, # 所有的肽段信息
+        'mapped_pairs_all': mapped_pairs_all, # 满足筛选条件的pid -> tid
+        'transcript_peptide_count': transcript_peptide_count, # 满足筛选条件的 tid -> peptide count
+        'tid2_cov': tid2_cov, # 满足相位筛选的转录本肽段覆盖度数据
+        'tid2_cds_seq': tid2_cds_seq # 满足筛选条件的转录本中提取的CDS序列
     }
 
 def generate_output(res, output_prefix):
@@ -334,10 +337,10 @@ def generate_output(res, output_prefix):
     peptide_count_df.to_csv(f"{output_prefix}_peptide_count_stats.csv", index=False)
 
 def main():
-    ms_file     = "/data/Eu/Eu_rnaseq/output_test/Eu_sp_finally.xlsx"
-    gtf_file    = "/data/Eu/Eu_rnaseq/output_test/file1_nonredundant_transcripts.gtf"
-    genome_file = "/data/Eu/Eu_rnaseq/genome.fa"
-    output_prefix = "/data/Eu/Eu_rnaseq/output_test/filter_by_ms"
+    ms_file     = "/media/wanglab/caca/Eu_peptido/20251018imeta/new_file_no_predict/00raw/Eu_sp_finally.xlsx"
+    gtf_file    = "/media/wanglab/caca/Eu_peptido/20251018imeta/new_file_no_predict/01new_gene/analysis_results/file1_nonredundant_transcripts.gtf"
+    genome_file = "/data/Eu/Eu_genome/GWHBISF00000000.genome.fasta"
+    output_prefix = "/media/wanglab/caca/Eu_peptido/20251018imeta/new_file_no_predict/01new_gene/analysis_results/filter_by_ms"
     workers = 40
     chunk_size = 1000
     res = filter_and_extract_cds(
