@@ -163,9 +163,9 @@ def find_cds_seq(genome, chrom, strand, pep_min, pep_max, exon_start, exon_end):
                 break
             p -= 3
     if cds_start is not None and cds_end is not None:
-        return seq[cds_start:cds_end]
+        return (seq[cds_start:cds_end], cds_start+1, cds_end)
     else:
-        return None
+        return (None, None, None)
 
 def filter_and_extract_cds(ms_file, gtf_file, genome_file, workers, chunk_size):
     transcript_lines, transcript_exon, tid2key = parse_gtf_transcript(gtf_file)
@@ -259,9 +259,9 @@ def filter_and_extract_cds(ms_file, gtf_file, genome_file, workers, chunk_size):
             continue
         pep_min = min(s for s,_,_ in intervals)
         pep_max = max(e for _,e,_ in intervals)
-        cds_seq = find_cds_seq(genome, chrom, strand, pep_min, pep_max, exon_start, exon_end)
+        (cds_seq, cds_real_start, cds_real_end) = find_cds_seq(genome, chrom, strand, pep_min, pep_max, exon_start, exon_end)
         if cds_seq is not None:
-            tid2_cds_seq[tid] = cds_seq
+            tid2_cds_seq[tid] = (cds_seq, cds_real_start, cds_real_end)
     transcript_peptide_count = {tid: total_counts.get(tid, 0) for tid in kept_tids}
     return {
         'transcript_lines': transcript_lines, # 所有单外显子转录本的数据行
@@ -311,15 +311,15 @@ def generate_output(res, output_prefix):
     gtf_cds_aa = f"{output_prefix}_gtf_cds_amino_acids.fasta"
     tid2key = res.get("tid2key")
     records_cds, records_cds_aa = [], []
-    for tid, seq_str in tid2_cds_seq.items():
+    for tid, (seq_str, cds_real_start, cds_real_end) in tid2_cds_seq.items():
         if not seq_str:
             continue
         seq_obj = Seq(seq_str)
         strand = tid2key[tid][1]
         chrom = tid2key[tid][0]
-        records_cds.append(SeqRecord(seq_obj, id=tid, description=f"{chrom}\t{strand}"))
+        records_cds.append(SeqRecord(seq_obj, id=tid, description=f"{chrom}\t{strand}\t{cds_real_start}\t{cds_real_end}"))
         aa = seq_obj.translate() if strand == '+' else seq_obj.reverse_complement().translate()
-        records_cds_aa.append(SeqRecord(aa, id=tid, description=f"{chrom}\t{strand}"))
+        records_cds_aa.append(SeqRecord(aa, id=tid, description=f"{chrom}\t{strand}\t{cds_real_start}\t{cds_real_end}"))
     SeqIO.write(records_cds, gtf_cds, "fasta")
     SeqIO.write(records_cds_aa, gtf_cds_aa, "fasta")
     # output coverage and peptide count file
@@ -353,3 +353,38 @@ def main():
     generate_output(res, output_prefix)
 if __name__ == "__main__":
     main()
+
+# from Bio import SeqIO
+# def filter_stop_codon(cds_file, cds_aa_file, filter_cds_file, filter_cds_aa_file):
+#     cds_dict = {}
+#     for rec in SeqIO.parse(cds_file, "fasta"):
+#         cds_dict[rec.id] = (rec.seq, rec.description)
+#     cds_aa_dict = {}
+#     for rec in SeqIO.parse(cds_aa_file, "fasta"):
+#         cds_aa_dict[rec.id] = (rec.seq, rec.description)
+#     kept_id = []
+#     for key, value in cds_aa_dict.items():
+#         if '*' in value[0]:
+#             continue
+#         kept_id.append(key)
+
+#     filtered_cds_records = []
+#     filtered_cds_aa_records = []
+#     for seq_id in kept_id:
+#         if seq_id in cds_dict:
+#             seq, description = cds_dict[seq_id]
+#             record = SeqIO.SeqRecord(seq, id=seq_id, description=description)
+#             filtered_cds_records.append(record)
+#         if seq_id in cds_aa_dict:
+#             seq, description = cds_aa_dict[seq_id]
+#             record = SeqIO.SeqRecord(seq, id=seq_id, description=description)
+#             filtered_cds_aa_records.append(record)
+#     with open(filter_cds_file, 'w') as f:
+#         SeqIO.write(filtered_cds_records, f, 'fasta')
+#     with open(filter_cds_aa_file, 'w') as f:
+#         SeqIO.write(filtered_cds_aa_records, f, 'fasta') 
+# cds_file = r"G:\Eu_peptido\20251018imeta\new_file_no_predict\01new_gene\analysis_results\filter_by_ms_gtf_cds.fasta"
+# cds_aa_file = r"G:\Eu_peptido\20251018imeta\new_file_no_predict\01new_gene\analysis_results\filter_by_ms_gtf_cds_amino_acids.fasta"
+# filter_cds_file = r"G:\Eu_peptido\20251018imeta\new_file_no_predict\01new_gene\analysis_results\codon_filter_by_ms_gtf_cds.fasta"
+# filter_cds_aa_file = r"G:\Eu_peptido\20251018imeta\new_file_no_predict\01new_gene\analysis_results\codon_filter_by_ms_gtf_cds_amino_acids.fasta"
+# filter_stop_codon(cds_file, cds_aa_file, filter_cds_file, filter_cds_aa_file)

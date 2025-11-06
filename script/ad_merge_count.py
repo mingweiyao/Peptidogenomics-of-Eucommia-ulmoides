@@ -1,11 +1,11 @@
-
 import pandas as pd
 import os
-import gffutils
 from tqdm import tqdm
 import numpy as np
+from Bio import SeqIO
+import re
 
-def merge_count_files(input_dir, rna_info_file, output_file, gene_id_col="Geneid"):
+def merge_count_files(input_dir, rna_info_file, gene_id_col="Geneid"):
     count_files = pd.read_excel(rna_info_file, sheet_name="Sheet2")
     merged_df = None
     for _, row in tqdm(count_files.iterrows(), desc="合并进度"):
@@ -25,15 +25,17 @@ def merge_count_files(input_dir, rna_info_file, output_file, gene_id_col="Geneid
             continue
     if merged_df is not None:
         print(f"\n合并后数据维度: {merged_df.shape}")
-        if merged_df.duplicated('GeneID').any():
-            print(f"警告：存在重复基因ID，将取第一个出现的值")
-            merged_df = merged_df.drop_duplicates('GeneID')
-        merged_df.to_csv(output_file, index=False)
         return merged_df
     else:
         raise ValueError(f"错误：未成功合并任何数据")    
 
-def filter_expressed_genes(count_df, output_prefix, mean_threshold=10):
+def filter_codon_gene(expression_matrix, cds_file):
+    kept_id = []
+    for rec in SeqIO.parse(cds_file, "fasta"):
+        kept_id.append(re.sub(r'\.[^.]*$', '', rec.id))
+    return expression_matrix[expression_matrix['GeneID'].isin(kept_id)]
+
+def filter_expressed_genes(count_df, output_prefix, mean_threshold=5):
     expr_matrix = count_df.drop(columns=['GeneID'])
     nonzero_mean = expr_matrix.replace(0, np.nan).mean(axis=1, skipna=True)
     has_expression = (expr_matrix > 0).any(axis=1)
@@ -47,32 +49,13 @@ def filter_expressed_genes(count_df, output_prefix, mean_threshold=10):
     print(f"结果保存至: {expressed_file}")
     return expressed_genes
 
-def prepare_length_data(gff_file):
-    if not os.path.exists(gff_file + '.db'):
-        print("🔄 正在创建GFF数据库...")
-        gffutils.create_db(
-            gff_file,
-            dbfn=gff_file + '.db',
-            force=True,
-            keep_order=True,
-            merge_strategy='merge',
-            id_spec={'gene': 'ID', 'mRNA': 'ID', 'CDS':'Parent'},
-            disable_infer_genes=True,
-            disable_infer_transcripts=True
-        )
-    db = gffutils.FeatureDB(gff_file + '.db')
+def prepare_length_data(cds_file):
     gene_lengths = {}
-    for gene in db.features_of_type('gene'):
-        total_length = 0
-        for mRNA in db.children(gene, featuretype='mRNA'):
-            exons = list(db.children(mRNA, featuretype='exon'))
-            if exons:
-                mRNA_length = sum(e.end - e.start + 1 for e in exons)
-                total_length += mRNA_length
-        if total_length > 0:
-            gene_id = gene.id.replace('evm.model.', 'evm.TU.')
-            gene_lengths[gene_id] = total_length
-    gene_length_df = pd.DataFrame(list(gene_lengths.items()), columns=['GeneID', 'length'])   
+    for rec in SeqIO.parse(cds_file, "fasta"):
+        _, _, start, end = rec.description.split('\t')
+        rec_id = re.sub(r'\.[^.]*$', '', rec.id)
+        gene_lengths[rec_id] = int(end) - int(start) + 1
+    gene_length_df = pd.DataFrame(list(gene_lengths.items()), columns=['GeneID', 'length'])
     return gene_length_df
 
 def normalize_tpm(count_df, length_df, output_file):
@@ -88,56 +71,71 @@ def normalize_tpm(count_df, length_df, output_file):
     tpm_df = pd.concat([df[['GeneID']], pd.DataFrame(tpm_data)], axis=1)
     tpm_df.to_csv(output_file, index=False)
     print(f"TPM标准化完成: {output_file} (总条目数: {len(tpm_df)})")
-    return tpm_df
 
-def extract_condition_samples(count_df, tpm_df, RNA_info_file, output_prefix, sheet_name="Sheet3"):
-    condition_data = pd.read_excel(RNA_info_file, sheet_name=sheet_name)
-    for condition in condition_data.columns:
-        sample_ids = condition_data[condition].dropna().tolist()
-        available_samples = [col for col in count_df.columns if col in sample_ids]
-        condition_count_df = count_df[['GeneID'] + available_samples]
-        count_output = f"{output_prefix}_{condition}_counts.csv"
-        condition_count_df.to_csv(count_output, index=False)
-        condition_tpm_df = tpm_df[['GeneID'] + available_samples]
-        tpm_output = f"{output_prefix}_{condition}_tpm.csv"
-        condition_tpm_df.to_csv(tpm_output, index=False)
-        log2_tpm_df = condition_tpm_df.copy()
-        log2_tpm_df[available_samples] = np.log2(log2_tpm_df[available_samples] + 0.1)
-        log2_output = f"{output_prefix}_{condition}_log2tpm.csv"
-        log2_tpm_df.to_csv(log2_output, index=False)
-        print(f"\n条件 [{condition}] 提取结果:")
-        print(f"  样本数: {len(available_samples)}/{len(sample_ids)}")
-        print(f"  Count文件: {count_output}")
-        print(f"  TPM文件: {tpm_output}")
-        if len(available_samples) < len(sample_ids):
-            missing = set(sample_ids) - set(available_samples)
-            print(f"  缺失样本: {missing}")
+def extract_gene_locations(expression_df, cds_file):
+    gene_info = {}
+    for rec in SeqIO.parse(cds_file, "fasta"):
+        chrom_temp, strand, start, end = rec.description.split('\t')
+        chrom = chrom_temp.split(" ")[-1]
+        rec_id = re.sub(r'\.[^.]*$', '', rec.id)
+        if rec_id in expression_df['GeneID'].values:
+            gene_info[rec_id] = (chrom, strand, start, end)
+    return gene_info
+
+def gene_location(expression_df, element_file, cds_file, output_file):
+    gene_locations = extract_gene_locations(expression_df, cds_file)
+    element_df = pd.read_excel(element_file, sheet_name="Genomic_Features")
+    results = []
+    for gene_id, gene_info in gene_locations.items():
+        chrom, strand, start, end = gene_info
+        chrom_elements = element_df[(element_df['chrom'] == chrom) & (element_df['strand'] == strand)].sort_values('start').reset_index(drop=True)
+        overlapping_elements = []
+        for _, elem in chrom_elements.iterrows():
+            if not (elem['end'] < int(start) or elem['start'] > int(end)):
+                overlapping_elements.append(elem['type'])
+        unique_elements = []
+        for elem_type in overlapping_elements:
+            if elem_type not in unique_elements:
+                unique_elements.append(elem_type)
+        elements_string = "-".join(unique_elements) if unique_elements else None
+        results.append({
+            'gene_id': gene_id,
+            'chrom': chrom,
+            'strand': strand,
+            'start': start,
+            'end': end,
+            'spanning_elements': elements_string,
+            'element_count': len(unique_elements)
+        })
+    result_df = pd.DataFrame(results)
+    result_df.to_csv(output_file, index=False)
 
 def main():
-    input_dir = ""
-    rna_info_file = ""
-    gff_file = ""
-    output_dir = ""
+    input_dir = r"G:\Eu_peptido\20251018imeta\new_file_no_predict\01new_gene\quantitative"
+    rna_info_file = r"G:\Eu_peptido\20251018imeta\new_file_no_predict\00raw\Total_rna_seq.xlsx"
+    cds_file = r"G:\Eu_peptido\20251018imeta\new_file_no_predict\01new_gene\analysis_results\codon_filter_by_ms_gtf_cds.fasta"
+    element_file = r"G:\Eu_peptido\20251018imeta\new_file_no_predict\00raw\peptide_analysis_results.xlsx"
+    output_dir = r"G:\Eu_peptido\20251018imeta\new_file_no_predict\01new_gene"
     os.makedirs(output_dir, exist_ok=True)
-    print("=== 步骤1/6: 合并计数文件 ===")
-    expression_matrix = merge_count_files(input_dir, rna_info_file, 
-                                          output_file=os.path.join(output_dir, "expression_matrix.csv"))
-    print("\n=== 步骤2/6: 筛选表达基因 ===")
-    expression_genes = filter_expressed_genes(expression_matrix, os.path.join(output_dir, "total"))
-    print("\n=== 步骤3/6: TPM标准化 ===")
-    length_df = prepare_length_data(gff_file)
-    tpm_matrix = normalize_tpm(
+    print("=== 步骤1/4: 合并计数文件 ===")
+    expression_matrix = merge_count_files(input_dir, rna_info_file)
+    # 筛选序列中没有终止密码子的gene的表达量
+    expression_matrix_filter = filter_codon_gene(expression_matrix, cds_file)
+    print("\n=== 步骤2/4: 筛选表达基因 ===")
+    # 筛选序列中没有终止密码子的真实表达的gene
+    expression_genes = filter_expressed_genes(expression_matrix_filter, os.path.join(output_dir, "total"))
+    print("\n=== 步骤3/4: TPM标准化 ===")
+    # 对序列中没有终止密码子的真实表达的gene的表达量TPM标准化
+    length_df = prepare_length_data(cds_file)
+    normalize_tpm(
         expression_genes,
         length_df,
         os.path.join(output_dir, "total_expressed_tpm.csv")
     )
-    print("\n=== 步骤4/6: 提取条件样本数据 ===")
-    extract_condition_samples(
-        expression_genes,
-        tpm_matrix,
-        rna_info_file,
-        os.path.join(output_dir, "condition")
-    ) 
+    print("\n=== 步骤4/4: 基因位置分类 ===")
+    # 对序列中没有终止密码子的真实表达的gene的位置进行分类
+    gene_location(expression_genes, element_file, cds_file, os.path.join(output_dir, "total_expression_matrix.csv"))
+
 
 if __name__ == "__main__":
     main()
