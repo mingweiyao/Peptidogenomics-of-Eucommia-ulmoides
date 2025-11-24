@@ -50,17 +50,3 @@
 # if __name__ == "__main__":
 #     main()
 
-from Bio import SeqIO
-import pandas as pd
-genome_file = ""
-id_file = ""
-peptide_file = ""
-
-df_id = pd.read_excel(id_file, sheet_name="NCP")
-df_peptide = pd.read_excel(peptide_file)
-filter_df = df_peptide[df_peptide['ID'].isin(df_id['id'])]
-
-seq_dict = {}
-for rec in SeqIO.parse(genome_file, "fasta"):
-    seq_dict[rec.id] = rec.seq
-

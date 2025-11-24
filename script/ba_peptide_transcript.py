@@ -1,18 +1,41 @@
 import pandas as pd
 from Bio import SeqIO
+from Bio.Seq import Seq
+from tqdm import tqdm
+from multiprocessing import Pool
+
+START_CODONS = {"ATG", "CTG", "GTG", "TTG", "ACG"}
+STOP_CODONS  = {"TAA", "TAG", "TGA"}
+MINUS_START_CODONS = {"CAT","CAG","CAC","CAA","CGT"}
+MINUS_STOP_CODONS = {"TTA","CTA","TCA"}
+
+CODON_PRIOR = {
+    "ATG": 0.0,
+    "CTG": -1.0,
+    "GTG": -1.4,
+    "TTG": -1.5,
+    "ACG": -1.1
+}
+MINUS_CODON_PRIOR = {
+    "CAT": 0.0,
+    "CAG": -1.0,
+    "CAC": -1.4,
+    "CAA": -1.5,
+    "CGT": -1.1
+}
 
 def merge_segments(segments):
     min_start = min(segments, key=lambda x: x[0])[0]
     max_end = max(segments, key=lambda x: x[1])[1]  
-    return (max_end - min_start + 1) / 3
+    return min_start, max_end
 
-def analysis_peptide(peptide_file, database_file, output_file):
+def filter_peptide_seq_cal_cov(peptide_file, database_file):
     database_dict = {}
     for rec in SeqIO.parse(database_file, "fasta"):
         database_dict[rec.id] = rec.seq
     df_NCP = pd.read_excel(peptide_file, sheet_name="NCP")
-    df_NCP_filter = df_NCP[df_NCP['type'] != 'exon_diff']
-
+    df_NCP['proteins'] = df_NCP['proteins'].astype(int)
+    df_NCP_filter = df_NCP[(df_NCP['type'] != 'exon_diff') & (df_NCP['proteins'] == 1)]
     accession_segments = {}
     for _, row in df_NCP_filter.iterrows():
         accession = row['accessions']
@@ -23,14 +46,14 @@ def analysis_peptide(peptide_file, database_file, output_file):
         if accession not in accession_segments:
             accession_segments[accession] = []
         accession_segments[accession].append((start, end, chrom, strand))
-
     stats = []
     for accession, segments in accession_segments.items():
         if accession in database_dict:
             seq = database_dict[accession]
             length = len(seq)
-            len_merge_seq = merge_segments(segments)
-            coverage = len_merge_seq / length
+            min_start, max_end = merge_segments(segments)
+            cov_length = (max_end-min_start+1) / 3
+            coverage = cov_length / length
             chrom = segments[0][2]
             strand = segments[0][3]
             peptide_count = len(segments)
@@ -38,19 +61,110 @@ def analysis_peptide(peptide_file, database_file, output_file):
                 'accession': accession,
                 'chrom': chrom,
                 'strand': strand,
+                'min_start': min_start,
+                'max_end': max_end,
                 'coverage': coverage,
                 'peptide_count': peptide_count,
-                'sequence_length': length
+                'sequence_length_aa': length
             })
-    stats_df = pd.DataFrame(stats)
-    stats_df.to_excel(output_file, index=False)
-    print(f"分析结果已保存至: {output_file}")
+    return stats
+
+def codon_test(seq, min_start, max_end, max_scan_nt):
+    seq = str(Seq(str(seq)).upper())
+    max_length = int(max_scan_nt / 3)
+    for i in range(max_length):
+        if seq[min_start-1-3*i:min_start+2-3*i] in START_CODONS:
+            phy_start = min_start-3*i
+            phy_value = CODON_PRIOR[seq[min_start-1-3*i:min_start+2-3*i]]
+            break
+    else:
+        phy_start = None
+        phy_value = None
+    for i in range(max_length):
+        if seq[max_end+i*3 : max_end+3*(i+1)] in STOP_CODONS:
+            phy_end = max_end + i*3
+            break
+    else:
+        phy_end = None
+    return phy_start, phy_value, phy_end
+
+def codon_test_minus(seq, min_start, max_end, max_scan_nt):
+    seq = str(Seq(str(seq)).upper())
+    max_length = int(max_scan_nt / 3)
+    for i in range(max_length):
+        if seq[min_start-1-3*(i+1):min_start-1-3*i] in MINUS_STOP_CODONS:
+            phy_start = min_start-3*i
+            break
+    else:
+        phy_start = None
+    for i in range(max_length):
+        if seq[max_end+3*(i-1):max_end+3*i] in MINUS_START_CODONS:
+            phy_end = max_end+3*i
+            phy_value = MINUS_CODON_PRIOR[seq[max_end+3*(i-1):max_end+3*i]]
+            break
+    else:
+        phy_end = None
+        phy_value = None
+    return phy_start, phy_value, phy_end
+
+def kozak_score_cal(genome_seq, phy_start, phy_end, strand, flank):
+    genome_seq = Seq(str(genome_seq).upper())
+    if strand == '+':
+        ctx = genome_seq[phy_start-1-flank:phy_start+flank+2]
+    else:
+        ctx = genome_seq[phy_end-3-flank:phy_end+flank].reverse_complement()
+    codon_pos = flank
+    core = 0.0
+    if ctx[codon_pos-3] in ('A', 'G'): core += 2.0
+    if ctx[codon_pos+3] == 'G':       core += 2.0
+    extended = 0.0
+    for rel, ref in { -6:'G', -5:'C', -4:'C', -2:'C', +4:'G' }.items():
+        if ctx[codon_pos+rel] == ref: extended += 0.5
+    return {"core": core, "extended": extended, "total": core+extended, "context": ctx}
+
+def run_scan_and_output_for_item(item, genome_dict, max_scan_nt):
+    chrom = item['chrom']
+    strand = item['strand']
+    min_start = int(item['min_start'])
+    max_end = int(item['max_end'])
+    item['phy_start'] = None
+    item['phy_end'] = None
+    item['prior'] = None
+    item['total_score'] = None
+    gseq = genome_dict[chrom]
+    if strand == '+':
+        phy_start, phy_value, phy_end = codon_test(gseq, min_start, max_end, max_scan_nt)
+        prior_triplet = str(gseq[phy_start-1:phy_start+2]) if phy_start else None
+    else:
+        phy_start, phy_value, phy_end = codon_test_minus(gseq, min_start, max_end, max_scan_nt)
+        prior_triplet = str(gseq[phy_end-3:phy_end].reverse_complement()) if phy_end else None
+    item['phy_start'] = phy_start
+    item['phy_end'] = phy_end
+    item['prior'] = prior_triplet
+    if phy_start and phy_end:
+        kozak_results = kozak_score_cal(gseq, phy_start, phy_end, strand, flank=6)
+        item['total_score'] = phy_value + kozak_results['total']
+    return item
+
+def run_scan_and_output(stats, genome_file, max_scan_nt):
+    genome_dict = {}
+    for rec in SeqIO.parse(genome_file, "fasta"):
+        genome_dict[rec.id] = rec.seq
+    with Pool(processes=100) as pool:
+        stats_update = pool.starmap(run_scan_and_output_for_item, [(item, genome_dict, max_scan_nt) for item in stats])
+    return stats_update
 
 def main():
-    peptide_file = r"D:\Desktop\peptidemicro\00raw\sp_loc\Eu_sp_finally.xlsx"
-    database_file = r"D:\Desktop\peptidemicro\00raw\Eu_peptide_database_customized_5.fa"
-    output_file = r"D:\Desktop\output_file.xlsx"
-    analysis_peptide(peptide_file, database_file, output_file)
+    peptide_file = "/media/wanglab/caca/Eu_peptido/20251018imeta/new_filter_from_ms/Eu_sp_finally.xlsx"
+    database_file = "/media/wanglab/caca/Eu_peptido/20251018imeta/new_filter_from_ms/Eu_peptide_database_customized_5.fa"
+    genome_file = "/media/wanglab/caca/Eu_peptido/20251018imeta/new_filter_from_ms/Eu_genome.fasta"
+    output_file = "/media/wanglab/caca/Eu_peptido/20251018imeta/new_filter_from_ms/output.csv"
+    
+    stats = filter_peptide_seq_cal_cov(peptide_file, database_file)
+    stats_update = run_scan_and_output(stats, genome_file, max_scan_nt=300)
+    
+    df = pd.DataFrame(stats_update)
+    df.to_csv(output_file, index=False)
 
 if __name__ == "__main__":
     main()
