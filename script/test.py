@@ -50,3 +50,15 @@
 # if __name__ == "__main__":
 #     main()
 
+from Bio import SeqIO
+from Bio.SeqRecord import SeqRecord
+input_file = r"E:\实验室\实验数据\sm_family\AtGene\Arabidopsis_thaliana.TAIR10.pep.all.fa"
+output_file = r"E:\实验室\实验数据\sm_family\AtGene\At_UGT.fa"
+
+ugt_records = []
+for rec in SeqIO.parse(input_file, "fasta"):
+    if "UGT" in rec.description:
+        seq_record = SeqRecord(rec.seq, id="example", description=rec.description)
+        ugt_records.append(seq_record)
+
+SeqIO.write(ugt_records, output_file, "fasta")
