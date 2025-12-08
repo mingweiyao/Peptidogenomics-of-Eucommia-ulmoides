@@ -1,3 +1,24 @@
+# # figure4b：不同组织中肽表达数量
+# import pandas as pd
+# gene_expression_df = pd.read_csv(r"F:\Eu_peptido\new_prepare\sp_expression.csv", index_col=0)
+# tissue_mapping_df = pd.read_excel(r"F:\Eu_peptido\00file\00raw\rnaseq\Total_rna_seq.xlsx", sheet_name="Sheet4")
+# tissue_to_samples = tissue_mapping_df.groupby('Tissues')['Sample'].apply(list).to_dict()
+# peptide_ids_by_tissue = {}
+# for tissue, samples in tissue_to_samples.items():
+#     tissue_expr = gene_expression_df[samples]
+#     expressed_peptides = tissue_expr[(tissue_expr > 10).any(axis=1)].index.tolist()
+#     peptide_ids_by_tissue[tissue] = expressed_peptides
+# max_length = max(len(ids) for ids in peptide_ids_by_tissue.values())
+# peptide_ids_df = pd.DataFrame({
+#     tissue: ids + [None]*(max_length - len(ids)) 
+#     for tissue, ids in peptide_ids_by_tissue.items()
+# })
+# output_csv_path = r"F:\Eu_peptido\new_prepare\figure4_peptide_expression_ids.csv"
+# peptide_ids_df.to_csv(output_csv_path, index=False)
+# print("✅ 结果已保存至:", output_csv_path)
+# print("\n示例数据：")
+# print(peptide_ids_df.head())
+
 # # figure1:数量-肽统计
 # import pandas as pd
 # import numpy as np
@@ -146,8 +167,8 @@
 #     print(f"\nPDF文件已保存至: {output_pdf_path}")
 #     return plot_data
 # if __name__ == "__main__":
-#     expression_file = "/Volumes/caca/test_fractionation/01figure/sp_expressed.csv"
-#     output_pdf = "/Volumes/caca/test_fractionation/01figure/figure4/peptide_expression_distribution.pdf"
+#     expression_file = r"F:\Eu_peptido\new_prepare\sp_expression.csv"
+#     output_pdf = r"F:\Eu_peptido\new_prepare\peptide_expression_distribution.pdf"
 #     results = plot_peptide_distribution(expression_file, output_pdf, threshold=10)
 #     if results is not None:
 #         print(f"\n{'='*60}")
@@ -158,52 +179,214 @@
 #             'Percentage': '{:.1f}%'.format
 #         }))
 
-# # figure2：不同组织中肽表达数量
+# # 起始密码子预测
 # import pandas as pd
-# gene_expression_df = pd.read_csv("/Volumes/caca/test_fractionation/01figure/sp_expressed.csv", index_col=0)
-# tissue_mapping_df = pd.read_excel('/Volumes/caca/test_fractionation/00raw/rnaseq/Total_rna_seq.xlsx', sheet_name="Sheet4")
-# tissue_to_samples = tissue_mapping_df.groupby('Tissues')['Sample'].apply(list).to_dict()
-# peptide_ids_by_tissue = {}
-# for tissue, samples in tissue_to_samples.items():
-#     tissue_expr = gene_expression_df[samples]
-#     expressed_peptides = tissue_expr[(tissue_expr > 10).any(axis=1)].index.tolist()
-#     peptide_ids_by_tissue[tissue] = expressed_peptides
-# max_length = max(len(ids) for ids in peptide_ids_by_tissue.values())
-# peptide_ids_df = pd.DataFrame({
-#     tissue: ids + [None]*(max_length - len(ids)) 
-#     for tissue, ids in peptide_ids_by_tissue.items()
-# })
-# output_csv_path = '/Volumes/caca/test_fractionation/01figure/figure4/peptide_expression_ids.csv'
-# peptide_ids_df.to_csv(output_csv_path, index=False)
-# print("✅ 结果已保存至:", output_csv_path)
-# print("\n示例数据：")
-# print(peptide_ids_df.head())
+# from Bio import SeqIO
+# from Bio.Seq import Seq
+# from tqdm import tqdm
+# from multiprocessing import Pool
+# START_CODONS = {"ATG", "CTG", "GTG", "TTG", "ACG"}
+# STOP_CODONS  = {"TAA", "TAG", "TGA"}
+# MINUS_START_CODONS = {"CAT","CAG","CAC","CAA","CGT"}
+# MINUS_STOP_CODONS = {"TTA","CTA","TCA"}
+# CODON_PRIOR = {
+#     "ATG": 0.0,
 
-# # figure63 统计起始氨基酸数量
+#     "CTG": -1.0,
+#     "GTG": -1.0,
+#     "TTG": -1.0,
+
+#     "ACG": -1.5,
+#     "AUA": -1.5,
+#     "AUU": -1.5,
+#     "AUC": -1.5,
+
+#     "AAG": -2.0,
+#     "AGG": -2.0,
+#     "CGU": -2.0,
+#     "CGC": -2.0,
+#     "CGG": -2.0,
+#     "CAG": -2.0
+# }
+# MINUS_CODON_PRIOR = {
+#     "CAT": 0.0,
+
+#     "CAG": -1.0,
+#     "CAC": -1.0,
+#     "CAA": -1.0,
+
+#     "CGT": -1.5,
+#     "TAT": -1.5,
+#     "AAT": -1.5,
+#     "GAT": -1.5,
+
+#     "CTT": -2.0,
+#     "CCT": -2.0,
+#     "ACG": -2.0,
+#     "GCG": -2.0,
+#     "CCG": -2.0,
+#     "CTG": -2.0
+# }
+# _genome_dict = None
+# _max_scan_nt = None
+# def init_worker(genome_file, max_scan_nt):
+#     global _genome_dict, _max_scan_nt
+#     _max_scan_nt = max_scan_nt
+#     _genome_dict = {}
+#     for rec in SeqIO.parse(genome_file, "fasta"):
+#         _genome_dict[rec.id] = rec.seq
+# def merge_segments(segments):
+#     min_start = min(segments, key=lambda x: x[0])[0]
+#     max_end = max(segments, key=lambda x: x[1])[1]  
+#     return min_start, max_end
+# def filter_peptide_seq_cal_cov(peptide_file, database_file):
+#     database_dict = {}
+#     for rec in SeqIO.parse(database_file, "fasta"):
+#         database_dict[rec.id] = rec.seq
+#     df_NCP = pd.read_excel(peptide_file)
+#     df_NCP['proteins'] = df_NCP['proteins'].astype(int)
+#     df_NCP_filter = df_NCP[(df_NCP['type'] != 'exon_diff') & (df_NCP['proteins'] == 1)]
+#     accession_segments = {}
+#     for _, row in df_NCP_filter.iterrows():
+#         accession = row['accessions']
+#         start = row['start']
+#         end = row['end']
+#         chrom = row['chrom']
+#         strand = row['strand']
+#         if accession not in accession_segments:
+#             accession_segments[accession] = []
+#         accession_segments[accession].append((start, end, chrom, strand))
+#     stats = []
+#     for accession, segments in accession_segments.items():
+#         if accession in database_dict:
+#             seq = database_dict[accession]
+#             length = len(seq)
+#             min_start, max_end = merge_segments(segments)
+#             cov_length = (max_end-min_start+1) / 3
+#             coverage = cov_length / length
+#             chrom = segments[0][2]
+#             strand = segments[0][3]
+#             peptide_count = len(segments)
+#             stats.append({
+#                 'accession': accession,
+#                 'chrom': chrom,
+#                 'strand': strand,
+#                 'min_start': min_start,
+#                 'max_end': max_end,
+#                 'coverage': coverage,
+#                 'peptide_count': peptide_count,
+#                 'sequence_length_aa': length
+#             })
+#     return stats
+# def codon_test(seq, min_start, max_end, max_scan_nt):
+#     seq = str(Seq(str(seq)).upper())
+#     max_length = int(max_scan_nt / 3)
+#     for i in range(max_length):
+#         if seq[min_start-1-3*i:min_start+2-3*i] in START_CODONS:
+#             phy_start = min_start-3*i
+#             phy_value = CODON_PRIOR[seq[min_start-1-3*i:min_start+2-3*i]]
+#             break
+#     else:
+#         phy_start = None
+#         phy_value = None
+#     for i in range(max_length):
+#         if seq[max_end+i*3 : max_end+3*(i+1)] in STOP_CODONS:
+#             phy_end = max_end + i*3
+#             break
+#     else:
+#         phy_end = None
+#     return phy_start, phy_value, phy_end
+# def codon_test_minus(seq, min_start, max_end, max_scan_nt):
+#     seq = str(Seq(str(seq)).upper())
+#     max_length = int(max_scan_nt / 3)
+#     for i in range(max_length):
+#         if seq[min_start-1-3*(i+1):min_start-1-3*i] in MINUS_STOP_CODONS:
+#             phy_start = min_start-3*i
+#             break
+#     else:
+#         phy_start = None
+#     for i in range(max_length):
+#         if seq[max_end+3*(i-1):max_end+3*i] in MINUS_START_CODONS:
+#             phy_end = max_end+3*i
+#             phy_value = MINUS_CODON_PRIOR[seq[max_end+3*(i-1):max_end+3*i]]
+#             break
+#     else:
+#         phy_end = None
+#         phy_value = None
+#     return phy_start, phy_value, phy_end
+# def kozak_score_cal(genome_seq, phy_start, phy_end, strand, flank):
+#     genome_seq = Seq(str(genome_seq).upper())
+#     if strand == '+':
+#         ctx = genome_seq[phy_start-1-flank:phy_start+flank+2]
+#     else:
+#         ctx = genome_seq[phy_end-3-flank:phy_end+flank].reverse_complement()
+#     codon_pos = flank
+#     core = 0.0
+#     if ctx[codon_pos-3] in ('A', 'G'): core += 2.0
+#     if ctx[codon_pos+3] == 'G':       core += 2.0
+#     extended = 0.0
+#     for rel, ref in { -6:'G', -5:'C', -4:'C', -2:'C', +4:'G' }.items():
+#         if ctx[codon_pos+rel] == ref: extended += 0.5
+#     return {"core": core, "extended": extended, "total": core+extended, "context": ctx}
+# def run_scan_and_output_for_item(item):
+#     global _genome_dict, _max_scan_nt
+#     chrom = item['chrom']
+#     strand = item['strand']
+#     min_start = int(item['min_start'])
+#     max_end = int(item['max_end'])
+#     gseq = _genome_dict[chrom]
+
+#     if strand == '+':
+#         phy_start, phy_value, phy_end = codon_test(gseq, min_start, max_end, _max_scan_nt)
+#         prior_triplet = str(gseq[phy_start-1:phy_start+2]) if phy_start else None
+#     else:
+#         phy_start, phy_value, phy_end = codon_test_minus(gseq, min_start, max_end, _max_scan_nt)
+#         prior_triplet = str(gseq[phy_end-3:phy_end].reverse_complement()) if phy_end else None
+#     item['phy_start'] = phy_start
+#     item['phy_end'] = phy_end
+#     item['prior'] = prior_triplet
+#     item['total_score'] = None
+#     if phy_start and phy_end:
+#         kozak_results = kozak_score_cal(gseq, phy_start, phy_end, strand, flank=6)
+#         item['total_score'] = phy_value + kozak_results['total']
+#         item['kozak_seq'] = kozak_results['context']
+#     return item
+# def run_scan_and_output(stats, genome_file, max_scan_nt=300, nproc=100):
+#     with Pool(processes=nproc, initializer=init_worker, initargs=(genome_file, max_scan_nt)) as pool:
+#         stats_update = list(pool.imap_unordered(run_scan_and_output_for_item, stats, chunksize=50))
+#     return stats_update
+# def main():
+#     peptide_file = "/media/wanglab/caca/Eu_peptido/20251113 horticulture research/initator_codon/sp_express_info.xlsx"
+#     database_file = "/media/wanglab/caca/Eu_peptido/20251113 horticulture research/initator_codon/Eu_peptide_database_customized_5.fa"
+#     genome_file = "/media/wanglab/caca/Eu_peptido/20251113 horticulture research/initator_codon/Eu_genome.fasta"
+#     output_file = "/media/wanglab/caca/Eu_peptido/20251113 horticulture research/initator_codon/output.csv"    
+#     stats = filter_peptide_seq_cal_cov(peptide_file, database_file)
+#     stats_update = run_scan_and_output(stats, genome_file, max_scan_nt=300)    
+#     df = pd.DataFrame(stats_update)
+#     df.to_csv(output_file, index=False)
+# if __name__ == "__main__":
+#     main()
+
+# # Kozak序列位置分析
 # import pandas as pd
-# from collections import Counter
-# excel_file = "/Volumes/caca/test_fractionation/01figure/sp_express_info.xlsx"
-# sequence_column = "sequence"
-# output_csv = "/Volumes/caca/test_fractionation/01figure/figure4/amino_acid_start_counts.csv"
-# try:
-#     df = pd.read_excel(excel_file)
-#     if sequence_column not in df.columns:
-#         raise ValueError(f"列 '{sequence_column}' 不存在于Excel文件中")
-#     first_amino_acids = []
-#     for seq in df[sequence_column]:
-#         if pd.notna(seq) and isinstance(seq, str) and len(seq) > 0:
-#             first_amino_acids.append(seq[0].upper())
-#     amino_acid_counts = Counter(first_amino_acids)
-#     sorted_counts = sorted(amino_acid_counts.items(), key=lambda x: x[0])
-#     result_df = pd.DataFrame(sorted_counts, columns=["Amino_Acid", "Count"])
-#     result_df.to_csv(output_csv, index=False)
-#     print(f"✅ 统计结果已保存到 {output_csv}")
-#     print("\n统计结果预览:")
-#     print(result_df.head())
-# except FileNotFoundError:
-#     print(f"错误: 文件 {excel_file} 未找到")
-# except Exception as e:
-#     print(f"发生错误: {str(e)}")
+# file = r"F:\Eu_peptido\new_prepare\figure4d.xlsx"
+# df = pd.read_excel(file, sheet_name="Sheet1")
+# seqs = df['kozak_seq'].dropna().astype(str)
+# seqs = seqs[seqs.str.len() == 15]
+# pos_counts = {i: {} for i in range(1, 16)}
+# for s in seqs:
+#     for i, ch in enumerate(s, start=1):
+#         pos_counts[i][ch] = pos_counts[i].get(ch, 0) + 1
+# all_chars = sorted({ch for counts in pos_counts.values() for ch in counts.keys()})
+# result_df = pd.DataFrame(
+#     index=all_chars,
+#     columns=[f"X{i}" for i in range(1, 16)]
+# )
+# for pos in range(1, 16):
+#     for ch, cnt in pos_counts[pos].items():
+#         result_df.loc[ch, f"X{pos}"] = cnt
+# result_df = result_df.fillna(0).astype(int)
+# result_df.to_excel(r"F:\Eu_peptido\new_prepare\figure4e_seq_position_statistics.xlsx")
 
 import pandas as pd
 from collections import Counter

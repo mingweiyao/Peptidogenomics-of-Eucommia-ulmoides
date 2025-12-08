@@ -53,14 +53,69 @@
 #     karyo_output = os.path.join(output_dir, "NCP_karyotype.tsv")
 #     prepare_gene_density(excel_file, genome_file, density_output, karyo_output)
 
+# # Figure3_Length_vs_NCP.pdf
+# import pandas as pd
+# from Bio import SeqIO
+# import matplotlib.pyplot as plt
+# import seaborn as sns
+# from scipy.stats import pearsonr
+# import os
+# genome_file = r"F:\Eu_peptido\00file\00raw\Raw_database\Eu_genome.fasta"
+# excel_file = r"F:\Eu_peptido\new_prepare\sp_expression_info.xlsx"
+# output_dir = r"F:\Eu_peptido\new_prepare"
+# mapping = []
+# chr_sizes = {}
+# for rec in SeqIO.parse(genome_file, "fasta"):
+#     gwh_id = rec.id
+#     desc_fields = rec.description.split("\t")
+#     chr_name = None
+#     for field in desc_fields:
+#         if field.startswith("OriSeqID="):
+#             chr_name = field.split("=")[1]
+#         if field.startswith("Len="):
+#             chr_length = int(field.split("=")[1])
+#     if chr_name:
+#         mapping.append({"chrom": gwh_id, "Chr": chr_name})
+#         chr_sizes[chr_name] = chr_length
+# mapping_df = pd.DataFrame(mapping)
+# mapping_df.to_csv(os.path.join(output_dir, "chr_mapping.tsv"), sep="\t", index=False)
+# gff_df = pd.read_excel(excel_file)
+# gff_df = gff_df[gff_df["chrom"] >= "GWHBISF00000485"]
+# gff_df = gff_df[gff_df["chrom"] <= "GWHBISF00000501"]
+# gff_df = gff_df.merge(mapping_df, left_on="chrom", right_on="chrom", how="left")
+# length_df = pd.DataFrame([
+#     {"Chr": chr_name, "Physical_Size": size / 1e6}
+#     for chr_name, size in chr_sizes.items()
+# ])
+# peptide_count_df = gff_df.groupby("Chr").size().reset_index(name="NCP")
+# final_df = length_df.merge(peptide_count_df, on="Chr", how="inner")
+# final_df = final_df.sort_values("Chr")
+# final_df.to_csv(os.path.join(output_dir, "chrom_length_peptide_count.tsv"), sep="\t", index=False)
+# plt.figure(figsize=(8, 6))
+# sns.set(style="whitegrid")
+# ax = sns.regplot(data=final_df, x="Physical_Size", y="NCP", scatter_kws={'s': 60, 'color': '#117733'}, line_kws={'color': 'black'})
+# r, p = pearsonr(final_df["Physical_Size"], final_df["NCP"])
+# plt.text(
+#     x=max(final_df["Physical_Size"]) * 0.6,
+#     y=max(final_df["NCP"]) * 0.95,
+#     s=f"r = {r:.2f}\np = {p:.2g}",
+#     fontsize=12
+# )
+# plt.xlabel("Chromosome Length (Mb)", fontsize=12)
+# plt.ylabel("NCP (Peptide Count)", fontsize=12)
+# plt.title("Figure 2: Peptide Count vs. Chromosome Length", fontsize=14)
+# plt.tight_layout()
+# plt.savefig(os.path.join(output_dir, "Figure2_Length_vs_NCP.pdf"))
+# print("✅ 输出文件已保存：chrom_length_peptide_count.tsv + Figure2_Length_vs_NCP.pdf")
+
 # # Figure3_Peptide_Distance_Histogram.pdf
 # import pandas as pd
 # import numpy as np
 # import matplotlib.pyplot as plt
 # from brokenaxes import brokenaxes
-# input_file = "/Volumes/caca/test_fractionation/01figure/sp_express_info.xlsx"
-# output_csv = "/Volumes/caca/test_fractionation/01figure/figure3/NCPs.csv"
-# output_plot = "/Volumes/caca/test_fractionation/01figure/figure3/Figure3_Peptide_Distance_Histogram.pdf"
+# input_file = r"F:\Eu_peptido\new_prepare\sp_expression_info.xlsx"
+# output_csv = r"F:\Eu_peptido\new_prepare\NCPs.csv"
+# output_plot = r"F:\Eu_peptido\new_prepare\Figure3_Peptide_Distance_Histogram.pdf"
 # df = pd.read_excel(input_file)
 # df_sorted = df.sort_values(by=["chrom", "start"]).reset_index(drop=True)
 # merged_peptides = []
@@ -88,7 +143,7 @@
 # df_merged.to_csv(output_csv, index=False)
 # print(f"💾 合并后的肽段及距离已保存到：{output_csv}")
 # fig = plt.figure(figsize=(8, 5))
-# bax = brokenaxes(ylims=((0, 3000), (13000, 14000)), hspace=0.05, fig=fig)
+# bax = brokenaxes(ylims=((0, 4000), (17000, 19000)), hspace=0.05, fig=fig)
 # bax.hist(valid_distances, bins=50, color="#009E73", edgecolor="black")
 # bax.set_xlabel("Distance (kb)", fontsize=12)
 # bax.set_ylabel("Frequency", fontsize=12)
@@ -102,9 +157,9 @@
 # import numpy as np
 # from brokenaxes import brokenaxes
 # import matplotlib.pyplot as plt
-# excel_file_tss = "G:/peptidegenomics/02figure/figure.xlsx"
-# excel_file = "G:/test_fractionation/01figure/sp_express_info.xlsx"
-# output_pdf = "G:/test_fractionation/01figure/figure3/Figure_TSS_Gene_Distance_Distribution.pdf"
+# excel_file_tss = r"F:\Eu_peptido\new_prepare\figure3_figure.xlsx"
+# excel_file = r"F:\Eu_peptido\new_prepare\sp_expression_info.xlsx"
+# output_pdf = r"F:\Eu_peptido\new_prepare\Figure_TSS_Gene_Distance_Distribution.pdf"
 # tss_df = pd.read_excel(excel_file_tss, sheet_name="TSS")
 # gene_df = pd.read_excel(excel_file)
 # distances = []
@@ -135,9 +190,9 @@
 # pd.DataFrame({
 #     'Distance Range (kb)': [f"{dist:.0f}-{dist+bin_width:.0f}" for dist in bin_edges[:-1]],
 #     'Frequency': hist_counts
-# }).to_csv("G:/test_fractionation/01figure/figure3/TSS_distance_frequency.csv", index=False)
+# }).to_csv(r"F:\Eu_peptido\new_prepare\SS_distance_frequency.csv", index=False)
 # fig = plt.figure(figsize=(8, 5))
-# bax = brokenaxes(ylims=((0, 4000),(8000, 10000)), hspace=0.05, fig=fig)
+# bax = brokenaxes(ylims=((0, 6000),(12000, 14000)), hspace=0.05, fig=fig)
 # bax.hist(gene_df["min_TSS_distance_kb"], bins=50, color="#009E73", edgecolor="black")
 # bax.set_xlabel("Distance to Nearest TSS (kb)")
 # bax.set_ylabel("Frequency")
