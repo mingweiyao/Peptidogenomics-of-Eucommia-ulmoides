@@ -50,7 +50,7 @@ def excel_to_gff3(df, output_gff):
         print(f"转换了 {len(df)} 条基因记录，共生成 {len(gff_lines)} 行GFF记录")
     except Exception as e:
         print(f"写入GFF文件失败: {e}")
-excel_file = "D:/Desktop/sp_express_info.xlsx"
-output_gff = "D:/Desktop/junction.gff"
-df = pd.read_excel(excel_file, sheet_name="junction")
+excel_file = r"F:\CLE\New_CLE_analysis\理化性质\基因组坐标.xlsx"
+output_gff = r"F:\CLE\New_CLE_analysis\染色体定位\EuCLE_partial.gff"
+df = pd.read_excel(excel_file, sheet_name="Sheet2")
 excel_to_gff3(df, output_gff)
