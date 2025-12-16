@@ -2,3 +2,23 @@
 *.fa filter=lfs diff=lfs merge=lfs -text
 *.xlsx filter=lfs diff=lfs merge=lfs -text
 *.gff filter=lfs diff=lfs merge=lfs -text
+# micromamba/conda env + cache
+.env/
+.mamba/
+**/.env/
+**/.mamba/
+
+# conda/mamba pkgs cache (just in case)
+**/pkgs/
+**/conda-bld/
+
+# blast dbs / outputs (optional but usually huge)
+*.pin
+*.psq
+*.phr
+*.nin
+*.nsq
+*.nhr
+*.sqlite
+*.tmp
+*.log
