@@ -14,8 +14,8 @@ library(pheatmap)
 library(ggrepel)
 
 # ---------- 1. 输入文件 ----------
-file_xlsx <- "F:/Eu_peptido/new_prepare/figure5/gene_dt_deseq.xlsx"
-out_dir <- "F:/Eu_peptido/new_prepare/figure5/gene_dt"
+file_xlsx <- "F:/Eu_peptido/prepare Horiticulture plant journal/figure6/yield_deseq.xlsx"
+out_dir <- "F:/Eu_peptido/prepare Horiticulture plant journal/figure6/gene_dt"
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 
 # ---------- 2. 读 counts ----------
@@ -49,7 +49,11 @@ dds <- DESeqDataSetFromMatrix(
 )
 
 # ---------- 5. 过滤低表达 ----------
-dds <- dds[rowSums(counts(dds)) >= 20, ]
+grp <- colData(dds)$Group
+keep <- apply(counts(dds), 1, function(x) {
+  any(tapply(x > 10, grp, sum) >= 2)
+})
+dds <- dds[keep, ]
 
 # ---------- 6. 跑 DESeq ----------
 dds <- DESeq(dds)
@@ -132,7 +136,7 @@ for (i in seq_len(nrow(comp_df))) {
   write.csv(res_df, out_all, row.names = FALSE)
   
   # 输出显著 DEG（阈值可自己改）
-  deg_df <- subset(res_df, padj < 0.05 & abs(log2FoldChange) >= 2)
+  deg_df <- subset(res_df, padj < 0.05 & abs(log2FoldChange) >= 1)
   out_sig <- file.path(out_dir, paste0(cname, "_sig.csv"))
   write.csv(deg_df, out_sig, row.names = FALSE)
   
@@ -149,8 +153,8 @@ for (i in seq_len(nrow(comp_df))) {
   
   # 定义显著性和上下调分组（和你筛 DEG 的阈值保持一致：padj<0.05 & |log2FC|>=2）
   res_df$Regulation <- "NS"
-  res_df$Regulation[res_df$padj < 0.05 & res_df$log2FoldChange >= 2]  <- "Up"
-  res_df$Regulation[res_df$padj < 0.05 & res_df$log2FoldChange <= -2] <- "Down"
+  res_df$Regulation[res_df$padj < 0.05 & res_df$log2FoldChange >= 1]  <- "Up"
+  res_df$Regulation[res_df$padj < 0.05 & res_df$log2FoldChange <= -1] <- "Down"
   
   # 基础火山图
   p_vol <- ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj), color = Regulation)) +
@@ -168,7 +172,8 @@ for (i in seq_len(nrow(comp_df))) {
     library(ggrepel)
     top_lbl <- res_df[res_df$Regulation != "NS", ]
     if (nrow(top_lbl) > 0) {
-      top_lbl <- top_lbl[order(top_lbl$padj), ]
+      top_lbl$absLFC <- abs(top_lbl$log2FoldChange)
+      top_lbl <- top_lbl[order(-top_lbl$absLFC, top_lbl$padj), , drop = FALSE] 
       top_lbl <- head(top_lbl, 10)  # 取最显著的前 10 个
       p_vol <- p_vol +
         geom_text_repel(data = top_lbl,

@@ -686,8 +686,6 @@
 
 
 
-
-
 # # 蛋白质性质预测错误的肽段重新预测
 # import pandas as pd
 # from Bio.SeqUtils.ProtParam import ProteinAnalysis
@@ -944,98 +942,98 @@
 # if __name__ == "__main__":
 #     main()
 
-# # 汇总基因和肽段的转录组定量结果，并按照10的标准筛选
-# import pandas as pd
-# import os
-# from tqdm import tqdm
-# def merge_count_files(input_dir, RNA_info_file, output_file, gene_id_col="Geneid"):
-#     count_files = pd.read_excel(RNA_info_file, sheet_name="Sheet2")
-#     merged_df = None
-#     for _, row in tqdm(count_files.iterrows(), desc="合并进度"):
-#         file = row['Sample']
-#         sample_name = f"{file}_counts.txt"
-#         file_path = os.path.join(input_dir, sample_name)
-#         try:
-#             df = pd.read_csv(file_path, sep='\t', comment='#')
-#             counts = df[[gene_id_col, df.columns[-1]]]
-#             counts.columns = ['GeneID', file]
-#             if merged_df is None:
-#                 merged_df = counts
-#             else:
-#                 merged_df = pd.merge(merged_df, counts, on='GeneID', how='outer')
-#         except Exception as e:
-#             print(f"\n处理失败 {file}: {str(e)}")
-#             continue
-#     if merged_df is not None:
-#         print(f"\n合并后数据维度: {merged_df.shape}")
-#         if merged_df.duplicated('GeneID').any():
-#             print(f"警告：存在重复基因ID，将取第一个出现的值")
-#             merged_df = merged_df.drop_duplicates('GeneID')
-#         merged_df.to_csv(output_file, index=False)
-#         return merged_df
-#     else:
-#         raise ValueError(f"错误：未成功合并任何数据")
-# def combine_gene_sp_data(gene_df, sp_df, output_file):
-#     combined_df = pd.concat([gene_df, sp_df], axis=0)
-#     combined_df.to_csv(output_file, index=False)
-#     print(f"\n合并后总数据维度: {combined_df.shape}")
-#     return combined_df
-# def filter_expressed_genes(count_df, RNA_info_file, output_prefix):
-#     group_df = pd.read_excel(RNA_info_file, sheet_name="group")
-#     srr_col = group_df.columns[0]
-#     group_col = group_df.columns[2]
-#     group_df = group_df[group_df[srr_col].isin(count_df.columns)]
-#     group_to_srrs = (group_df.groupby(group_col)[srr_col].apply(list).to_dict())
-#     row_keep_mask = pd.Series(False, index=count_df.index)
-#     for grp, srr_list in group_to_srrs.items():
-#         srr_in_expr = [s for s in srr_list if s in count_df.columns]
-#         if not srr_in_expr:
-#             continue
-#         grp_mask = (count_df[srr_in_expr] >= 10).all(axis=1)
-#         row_keep_mask = row_keep_mask | grp_mask
-#     expr_filtered = count_df[row_keep_mask]
-#     expr_filtered.to_excel(f"{output_prefix}_expression_dup_10.xlsx", index=False)
-#     return expr_filtered
-# def extract_condition_samples(count_df, RNA_info_file, output_prefix, sheet_name="Sheet3"):
-#     condition_data = pd.read_excel(RNA_info_file, sheet_name=sheet_name)
-#     for condition in condition_data.columns:
-#         sample_ids = condition_data[condition].dropna().tolist()
-#         available_samples = [col for col in count_df.columns if col in sample_ids]
-#         condition_count_df = count_df[['GeneID'] + available_samples]
-#         count_output = f"{output_prefix}_{condition}_counts.csv"
-#         condition_count_df.to_csv(count_output, index=False)
-# if __name__ == "__main__":
-#     base_dir = r"F:\Eu_peptido\00file\00raw\rnaseq"
-#     gene_input_dir = os.path.join(base_dir, "02count_gene")
-#     sp_input_dir = os.path.join(base_dir, "02count_sp")
-#     RNA_info_file = os.path.join(base_dir, "Total_rna_seq.xlsx")
-#     output_dir = os.path.join(base_dir, "test")
-#     os.makedirs(output_dir, exist_ok=True)
-#     print("=== 步骤1/6: 合并计数文件 ===")
-#     gene_matrix = merge_count_files(
-#         gene_input_dir, RNA_info_file,
-#         output_file=os.path.join(output_dir, "gene_matrix.csv")
-#     )
-#     sp_matrix = merge_count_files(
-#         sp_input_dir, RNA_info_file,
-#         output_file=os.path.join(output_dir, "sp_matrix_all.csv")
-#     )
-#     print("\n=== 步骤2/6: 合并并筛选表达基因/小肽 ===")
-#     combined_matrix = combine_gene_sp_data(
-#         gene_matrix, sp_matrix,
-#         os.path.join(output_dir, "combined_matrix.csv")
-#     )
-#     expressed_genes_peptides = filter_expressed_genes(
-#         combined_matrix, RNA_info_file,
-#         os.path.join(output_dir, "total")
-#     )
-#     print("\n=== 步骤3/6: 提取条件样本数据 ===")
-#     extract_condition_samples(
-#         expressed_genes_peptides,
-#         RNA_info_file,
-#         os.path.join(output_dir, "condition")
-#     )
-#     print("\n所有处理完成！最终结果保存在:", output_dir)
+# 汇总基因和肽段的转录组定量结果，并按照10的标准筛选
+import pandas as pd
+import os
+from tqdm import tqdm
+def merge_count_files(input_dir, RNA_info_file, output_file, gene_id_col="Geneid"):
+    count_files = pd.read_excel(RNA_info_file, sheet_name="Sheet2")
+    merged_df = None
+    for _, row in tqdm(count_files.iterrows(), desc="合并进度"):
+        file = row['Sample']
+        sample_name = f"{file}_counts.txt"
+        file_path = os.path.join(input_dir, sample_name)
+        try:
+            df = pd.read_csv(file_path, sep='\t', comment='#')
+            counts = df[[gene_id_col, df.columns[-1]]]
+            counts.columns = ['GeneID', file]
+            if merged_df is None:
+                merged_df = counts
+            else:
+                merged_df = pd.merge(merged_df, counts, on='GeneID', how='outer')
+        except Exception as e:
+            print(f"\n处理失败 {file}: {str(e)}")
+            continue
+    if merged_df is not None:
+        print(f"\n合并后数据维度: {merged_df.shape}")
+        if merged_df.duplicated('GeneID').any():
+            print(f"警告：存在重复基因ID，将取第一个出现的值")
+            merged_df = merged_df.drop_duplicates('GeneID')
+        merged_df.to_csv(output_file, index=False)
+        return merged_df
+    else:
+        raise ValueError(f"错误：未成功合并任何数据")
+def combine_gene_sp_data(gene_df, sp_df, output_file):
+    combined_df = pd.concat([gene_df, sp_df], axis=0)
+    combined_df.to_csv(output_file, index=False)
+    print(f"\n合并后总数据维度: {combined_df.shape}")
+    return combined_df
+def filter_expressed_genes(count_df, RNA_info_file, output_prefix):
+    group_df = pd.read_excel(RNA_info_file, sheet_name="group")
+    srr_col = group_df.columns[0]
+    group_col = group_df.columns[2]
+    group_df = group_df[group_df[srr_col].isin(count_df.columns)]
+    group_to_srrs = (group_df.groupby(group_col)[srr_col].apply(list).to_dict())
+    row_keep_mask = pd.Series(False, index=count_df.index)
+    for grp, srr_list in group_to_srrs.items():
+        srr_in_expr = [s for s in srr_list if s in count_df.columns]
+        if not srr_in_expr:
+            continue
+        grp_mask = (count_df[srr_in_expr] >= 10).all(axis=1)
+        row_keep_mask = row_keep_mask | grp_mask
+    expr_filtered = count_df[row_keep_mask]
+    expr_filtered.to_excel(f"{output_prefix}_expression_dup_10.xlsx", index=False)
+    return expr_filtered
+def extract_condition_samples(count_df, RNA_info_file, output_prefix, sheet_name="Sheet3"):
+    condition_data = pd.read_excel(RNA_info_file, sheet_name=sheet_name)
+    for condition in condition_data.columns:
+        sample_ids = condition_data[condition].dropna().tolist()
+        available_samples = [col for col in count_df.columns if col in sample_ids]
+        condition_count_df = count_df[['GeneID'] + available_samples]
+        count_output = f"{output_prefix}_{condition}_counts.csv"
+        condition_count_df.to_csv(count_output, index=False)
+if __name__ == "__main__":
+    base_dir = r"F:\Eu_peptido\00file\00raw\rnaseq"
+    gene_input_dir = os.path.join(base_dir, "02count_gene")
+    sp_input_dir = os.path.join(base_dir, "02count_sp")
+    RNA_info_file = os.path.join(base_dir, "Total_rna_seq.xlsx")
+    output_dir = os.path.join(base_dir, "test")
+    os.makedirs(output_dir, exist_ok=True)
+    print("=== 步骤1/6: 合并计数文件 ===")
+    gene_matrix = merge_count_files(
+        gene_input_dir, RNA_info_file,
+        output_file=os.path.join(output_dir, "gene_matrix.csv")
+    )
+    sp_matrix = merge_count_files(
+        sp_input_dir, RNA_info_file,
+        output_file=os.path.join(output_dir, "sp_matrix_all.csv")
+    )
+    print("\n=== 步骤2/6: 合并并筛选表达基因/小肽 ===")
+    combined_matrix = combine_gene_sp_data(
+        gene_matrix, sp_matrix,
+        os.path.join(output_dir, "combined_matrix.csv")
+    )
+    expressed_genes_peptides = filter_expressed_genes(
+        combined_matrix, RNA_info_file,
+        os.path.join(output_dir, "total")
+    )
+    print("\n=== 步骤3/6: 提取条件样本数据 ===")
+    extract_condition_samples(
+        expressed_genes_peptides,
+        RNA_info_file,
+        os.path.join(output_dir, "condition")
+    )
+    print("\n所有处理完成！最终结果保存在:", output_dir)
 
 # # 去重区间存在重叠的肽段
 # import pandas as pd
