@@ -7,7 +7,7 @@ tissue_to_samples = tissue_mapping_df.groupby('Tissues')['Sample'].apply(list).t
 peptide_ids_by_tissue = {}
 for tissue, samples in tissue_to_samples.items():
     tissue_expr = gene_expression_df[samples]
-    expressed_peptides = tissue_expr[(tissue_expr >= 1).any(axis=1)].index.tolist()
+    expressed_peptides = tissue_expr[(tissue_expr > 10).any(axis=1)].index.tolist()
     peptide_ids_by_tissue[tissue] = expressed_peptides
 max_length = max(len(ids) for ids in peptide_ids_by_tissue.values())
 peptide_ids_df = pd.DataFrame({
