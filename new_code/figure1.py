@@ -921,7 +921,7 @@ import pandas as pd
 import os
 from tqdm import tqdm
 def merge_count_files(input_dir, RNA_info_file, output_file, gene_id_col="Geneid"):
-    count_files = pd.read_excel(RNA_info_file, sheet_name="Sheet2")
+    count_files = pd.read_excel(RNA_info_file, sheet_name="group")
     merged_df = None
     for _, row in tqdm(count_files.iterrows(), desc="合并进度"):
         file = row['Sample']
@@ -986,19 +986,19 @@ def filter_expressed_genes(count_df_cpm, RNA_info_file, output_prefix):
     valid_genes = []
     for group, srr_list in group_to_srrs.items():
         group_cpm = filtered_cpm[srr_list]
-        group_avg_cpm = group_cpm.mean(axis=1)
-        valid_genes_in_group = group_avg_cpm[group_avg_cpm >= 1].index
+        valid_genes_in_group = group_cpm[(group_cpm >= 1).all(axis=1)].index
         valid_genes.extend(valid_genes_in_group)
     valid_genes = list(set(valid_genes))
-    final_filtered_genes = filtered_cpm.loc[valid_genes]
-    final_filtered_genes.to_csv(f"{output_prefix}_filtered_genes.csv")
-    return valid_genes
-def extracted_sp_info(valid_genes, sp_info_file, output_file):
+    return valid_genes, filtered_cpm
+def extracted_sp_info(valid_genes, filter_cpm, sp_info_file, output_file, output_prefix):
     sp_info_df = pd.read_excel(sp_info_file, sheet_name="NCP")
     filtered_sp_info = sp_info_df[sp_info_df['ID'].isin(valid_genes)].copy()
     filtered_sp_info['proteins'] = pd.to_numeric(filtered_sp_info['proteins'], errors='coerce')
     filtered_sp_info = filtered_sp_info[filtered_sp_info['proteins']==1]
     filtered_sp_info.to_excel(output_file, index=False)
+    final_sp_ids = filtered_sp_info['ID'].tolist()
+    final_filtered_genes = filter_cpm.loc[final_sp_ids] 
+    final_filtered_genes.to_csv(f"{output_prefix}_filtered_genes.csv")
     print(f"\n提取表达小肽信息完成，结果保存至: {output_file}")
 def main():
     base_dir = r"D:\Desktop\peptidemicro\00file\00raw\rnaseq"
@@ -1024,11 +1024,11 @@ def main():
     )
     combined_matrix_cpm = compute_cpm(combined_matrix, os.path.join(output_dir, "total_combined_matrix_cpm.csv"))
     print("\n=== 步骤3/4: 筛选表达基因/小肽 ===")
-    valid_genes = filter_expressed_genes(
+    valid_genes, filter_cpm = filter_expressed_genes(
         combined_matrix_cpm, RNA_info_file, os.path.join(output_dir, "finally")
     )
     print("\n=== 步骤4/4: 提取表达小肽信息 ===")
-    extracted_sp_info(valid_genes, sp_info_file, os.path.join(output_dir, "finally_expressed_sp_info.xlsx"))
+    extracted_sp_info(valid_genes, filter_cpm, sp_info_file, os.path.join(output_dir, "finally_expressed_sp_info.xlsx"), os.path.join(output_dir, "finally"))
 if __name__ == "__main__":
     main()
 
