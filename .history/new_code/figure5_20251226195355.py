@@ -93,12 +93,3 @@
 #     merge_count_files(count_dir, RNA_info_file, output_file)
 # if __name__ == "__main__":
 #     main()
-
-# 提取特定基因表达量
-import pandas as pd
-id_mapping_df = pd.read_excel("/Users/lemon/Desktop/rubber.xlsx", sheet_name="Sheet2")
-data_df = pd.read_excel("/Users/lemon/Desktop/Eu_tissue.xlsx")
-mapped_ids = id_mapping_df['ID']
-mapped_df = data_df[data_df['GeneID'].isin(mapped_ids)]
-mapped_df.to_excel("/Users/lemon/Desktop/mapped_data.xlsx", index=False)
-print(mapped_df)

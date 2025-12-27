@@ -97,8 +97,10 @@
 # 提取特定基因表达量
 import pandas as pd
 id_mapping_df = pd.read_excel("/Users/lemon/Desktop/rubber.xlsx", sheet_name="Sheet2")
-data_df = pd.read_excel("/Users/lemon/Desktop/Eu_tissue.xlsx")
+data_df = pd.read_excel("/Users/lemon/Desktop/rubber_deseq2.xlsx", sheet_name="all_deseq")
+non_evm_df = data_df[~data_df['name'].str.startswith('evm')]
 mapped_ids = id_mapping_df['ID']
-mapped_df = data_df[data_df['GeneID'].isin(mapped_ids)]
-mapped_df.to_excel("/Users/lemon/Desktop/mapped_data.xlsx", index=False)
-print(mapped_df)
+mapped_df = data_df[data_df['name'].isin(mapped_ids)]
+final_df = pd.concat([non_evm_df, mapped_df])
+final_df.to_excel("/Users/lemon/Desktop/filtered_data.xlsx", index=False)
+print(final_df)
