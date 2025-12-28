@@ -94,66 +94,66 @@
 # if __name__ == "__main__":
 #     main()
 
-# # tpm标准化
-# import os
-# import gffutils
-# import pandas as pd
-# def prepare_length_data(gff_file):
-#     if not os.path.exists(gff_file + '.db'):
-#         print("🔄 正在创建GFF数据库...")
-#         gffutils.create_db(
-#             gff_file,
-#             dbfn=gff_file + '.db',
-#             force=True,
-#             keep_order=True,
-#             merge_strategy='merge',
-#             id_spec={'gene': 'ID', 'mRNA': 'ID', 'CDS':'Parent'},
-#             disable_infer_genes=True,
-#             disable_infer_transcripts=True
-#         )
-#     db = gffutils.FeatureDB(gff_file + '.db')
-#     gene_lengths = {}
-#     for gene in db.features_of_type('gene'):
-#         total_length = 0
-#         for mRNA in db.children(gene, featuretype='mRNA'):
-#             exons = list(db.children(mRNA, featuretype='exon'))
-#             if exons:
-#                 mRNA_length = sum(e.end - e.start + 1 for e in exons)
-#                 total_length += mRNA_length
-#         if total_length > 0:
-#             gene_id = gene.id.replace('evm.model.', 'evm.TU.')
-#             gene_lengths[gene_id] = total_length
-#     gene_length_df = pd.DataFrame(list(gene_lengths.items()), columns=['GeneID', 'length'])   
-#     return gene_length_df
-# def normalize_tpm(count_matrix, length_df, output_file):
-#     count_df = pd.read_excel(count_matrix)
-#     df = pd.merge(count_df, length_df, on='GeneID', how='inner')
-#     df = df[df['length'] > 0]
-#     sample_cols = [col for col in df.columns if col not in ['GeneID', 'length']]
-#     tpm_data = {}
-#     for sample in sample_cols:
-#         rpk = (df[sample] * 10**3) / df['length']
-#         per_million_scaling_factor = rpk.sum() / 10**6
-#         tpm = rpk / per_million_scaling_factor
-#         tpm_data[sample] = tpm
-#     tpm_df = pd.concat([df[['GeneID']], pd.DataFrame(tpm_data)], axis=1)
-#     tpm_df.to_excel(output_file, index=False)
-#     print(f"TPM标准化完成: {output_file} (总条目数: {len(tpm_df)})")
-#     return tpm_df
-# def main():
-#     count_matrix = "/Users/lemon/Desktop/total_matrix.xlsx"
-#     gff_file = "/Users/lemon/Desktop/Eu_gff.gff"
-#     output_file = "/Users/lemon/Desktop/total_matrix_tpm.xlsx"
-#     length_df = prepare_length_data(gff_file)
-#     normalize_tpm(count_matrix, length_df, output_file)
-# if __name__ == "__main__":
-#     main()
-
-# 提取特定基因表达量
+# tpm标准化
+import os
+import gffutils
 import pandas as pd
-id_mapping_df = pd.read_excel("/Users/lemon/Desktop/rubber.xlsx", sheet_name="Sheet2")
-data_df = pd.read_excel("/Users/lemon/Desktop/Eu_tissue.xlsx")
-mapped_ids = id_mapping_df['ID']
-mapped_df = data_df[data_df['GeneID'].isin(mapped_ids)]
-mapped_df.to_excel("/Users/lemon/Desktop/Eu_tissue_mapped_gene.xlsx", index=False)
-print(mapped_df)
+def prepare_length_data(gff_file):
+    if not os.path.exists(gff_file + '.db'):
+        print("🔄 正在创建GFF数据库...")
+        gffutils.create_db(
+            gff_file,
+            dbfn=gff_file + '.db',
+            force=True,
+            keep_order=True,
+            merge_strategy='merge',
+            id_spec={'gene': 'ID', 'mRNA': 'ID', 'CDS':'Parent'},
+            disable_infer_genes=True,
+            disable_infer_transcripts=True
+        )
+    db = gffutils.FeatureDB(gff_file + '.db')
+    gene_lengths = {}
+    for gene in db.features_of_type('gene'):
+        total_length = 0
+        for mRNA in db.children(gene, featuretype='mRNA'):
+            exons = list(db.children(mRNA, featuretype='exon'))
+            if exons:
+                mRNA_length = sum(e.end - e.start + 1 for e in exons)
+                total_length += mRNA_length
+        if total_length > 0:
+            gene_id = gene.id.replace('evm.model.', 'evm.TU.')
+            gene_lengths[gene_id] = total_length
+    gene_length_df = pd.DataFrame(list(gene_lengths.items()), columns=['GeneID', 'length'])   
+    return gene_length_df
+def normalize_tpm(count_matrix, length_df, output_file):
+    count_df = pd.read_excel(count_matrix)
+    df = pd.merge(count_df, length_df, on='GeneID', how='inner')
+    df = df[df['length'] > 0]
+    sample_cols = [col for col in df.columns if col not in ['GeneID', 'length']]
+    tpm_data = {}
+    for sample in sample_cols:
+        rpk = (df[sample] * 10**3) / df['length']
+        per_million_scaling_factor = rpk.sum() / 10**6
+        tpm = rpk / per_million_scaling_factor
+        tpm_data[sample] = tpm
+    tpm_df = pd.concat([df[['GeneID']], pd.DataFrame(tpm_data)], axis=1)
+    tpm_df.to_excel(output_file, index=False)
+    print(f"TPM标准化完成: {output_file} (总条目数: {len(tpm_df)})")
+    return tpm_df
+def main():
+    count_matrix = "/Users/lemon/Desktop/total_matrix.xlsx"
+    gff_file = "/User/lemon/Desktop/Eu_gff.gff"
+    output_file = "/Users/lemon/Desktop/total_matrix_tpm.xlsx"
+    length_df = prepare_length_data(gff_file)
+    normalize_tpm(count_matrix, length_df, output_file)
+if __name__ == "__main__":
+    main()
+
+# # 提取特定基因表达量
+# import pandas as pd
+# id_mapping_df = pd.read_excel("/Users/lemon/Desktop/rubber.xlsx", sheet_name="Sheet2")
+# data_df = pd.read_excel("/Users/lemon/Desktop/Eu_tissue.xlsx")
+# mapped_ids = id_mapping_df['ID']
+# mapped_df = data_df[data_df['GeneID'].isin(mapped_ids)]
+# mapped_df.to_excel("/Users/lemon/Desktop/mapped_data.xlsx", index=False)
+# print(mapped_df)
