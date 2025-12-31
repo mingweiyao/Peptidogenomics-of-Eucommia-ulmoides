@@ -1,3 +1,59 @@
+# # 筛选肽基因与基因完全不重叠的候选肽基因
+# import pandas as pd
+# from collections import defaultdict
+# def intervals_overlap_closed(a_start, a_end, b_start, b_end):
+#     return max(a_start, b_start) <= min(a_end, b_end)
+# def build_gene_buckets(gene_df):
+#     buckets = defaultdict(list)
+#     for _, g in gene_df.iterrows():
+#         chrom = str(g["chrom"])
+#         s = int(g["start"])
+#         e = int(g["end"])
+#         if s > e:
+#             s, e = e, s
+#         buckets[chrom].append((s, e))
+#     return buckets
+# def row_has_overlap_with_any_gene(row, gene_buckets):
+#     chrom = str(row["chrom"])
+#     s = int(row["phy_start"])
+#     e = int(row["phy_end"])
+#     if s > e:
+#         s, e = e, s
+#     intervals = gene_buckets.get((chrom), [])
+#     for gs, ge in intervals:
+#         if intervals_overlap_closed(s, e, gs, ge):
+#             return True
+#     return False
+# def main(excel_path, sheet1_name, sheet2_name, out_path):
+#     gene_df = pd.read_excel(excel_path, sheet_name=sheet1_name, engine="openpyxl")
+#     s2 = pd.read_excel(excel_path, sheet_name=sheet2_name, engine="openpyxl")
+#     gene_buckets = build_gene_buckets(gene_df)
+#     s2 = s2.copy()
+#     s2["_overlap_with_gene"] = s2.apply(lambda r: row_has_overlap_with_any_gene(r, gene_buckets), axis=1)
+#     s2["_no_overlap_with_gene"] = ~s2["_overlap_with_gene"]
+#     g = s2.groupby("accession")["_no_overlap_with_gene"] 
+#     acc_all_no = set(g.all()[lambda x: x].index)
+#     acc_any_no = set(g.any()[lambda x: x].index)
+#     out_task1 = s2[s2["accession"].isin(acc_all_no)].drop(columns=["_overlap_with_gene", "_no_overlap_with_gene"])
+#     out_task2 = s2[s2["accession"].isin(acc_any_no)].drop(columns=["_overlap_with_gene", "_no_overlap_with_gene"])
+#     tmp = s2[s2["accession"].isin(acc_all_no)].copy()
+#     tmp["total_score"] = pd.to_numeric(tmp["total_score"], errors="coerce")
+#     best_rows = tmp.sort_values(["accession", "total_score"], ascending=[True, False]) \
+#                    .drop_duplicates(subset=["accession"], keep="first") \
+#                    .drop(columns=["_overlap_with_gene", "_no_overlap_with_gene"], errors="ignore")
+#     with pd.ExcelWriter(out_path, engine="openpyxl") as w:
+#         out_task1.to_excel(w, sheet_name="task1_all_no_overlap", index=False)
+#         out_task2.to_excel(w, sheet_name="task2_any_no_overlap", index=False)
+#         best_rows.to_excel(w, sheet_name="task1_best_total_score", index=False)
+# if __name__ == "__main__":
+#     main(
+#         excel_path=r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\output_candidates.xlsx",
+#         sheet1_name="gene_coor",
+#         sheet2_name="output_candidates",
+#         out_path=r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\output_candidates_filtered.xlsx",
+#     )
+
+# # 将Excel中的基因坐标转换为GFF3格式
 # from datetime import datetime
 # import pandas as pd
 # def excel_to_gff3(df, output_gff):
@@ -50,9 +106,9 @@
 #         print(f"转换了 {len(df)} 条基因记录，共生成 {len(gff_lines)} 行GFF记录")
 #     except Exception as e:
 #         print(f"写入GFF文件失败: {e}")
-# excel_file = r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\output_best.xlsx"
+# excel_file = r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\output_candidates_filtered.xlsx"
 # output_gff = r"D:\Desktop\peptidemicro\00file\01figure\figure5\NCP_codon.gff"
-# df = pd.read_excel(excel_file, sheet_name="codon_1.0")
+# df = pd.read_excel(excel_file, sheet_name="task1_best_total_score")
 # excel_to_gff3(df, output_gff)
 
 # # 合并文件
@@ -60,7 +116,7 @@
 # import os
 # from tqdm import tqdm
 # def merge_count_files(input_dir, RNA_info_file, output_file, gene_id_col="Geneid"):
-#     count_files = pd.read_excel(RNA_info_file, sheet_name="group")
+#     count_files = pd.read_excel(RNA_info_file, sheet_name="Sheet5")
 #     merged_df = None
 #     for _, row in tqdm(count_files.iterrows(), desc="合并进度"):
 #         file = row['Sample']
@@ -87,46 +143,63 @@
 #     else:
 #         raise ValueError(f"错误：未成功合并任何数据")
 # def main():
-#     count_dir = r"D:\Desktop\peptidemicro\00file\00raw\rnaseq\02count_gene"
-#     RNA_info_file = r"D:\Desktop\peptidemicro\00file\00raw\rnaseq\Total_rna_seq.xlsx"
-#     output_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\total_gene_count_matrix.csv"
+#     count_dir = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rnaseq"
+#     RNA_info_file = r"D:\Desktop\peptidemicro\00file\01figure\Total_rna_seq.xlsx"
+#     output_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\total_sp_count_matrix.csv"
 #     merge_count_files(count_dir, RNA_info_file, output_file)
 # if __name__ == "__main__":
 #     main()
 
-# # tpm标准化
+# # FPKM标准化
 # import os
-# import gffutils
 # import pandas as pd
+# import gffutils
+# GFF_FILE = r"D:\Desktop\peptidemicro\00file\01figure\figure5\NCP_codon.gff"
+# COUNT_FILE = r"D:\Desktop\peptidemicro\00file\01figure\total_all_matrix.xlsx"
+# OUT_DIR = r"D:\Desktop\peptidemicro\00file\01figure"
 # def prepare_length_data(gff_file):
-#     if not os.path.exists(gff_file + '.db'):
-#         print("🔄 正在创建GFF数据库...")
+#     db_path = gff_file + ".db"
+#     if not os.path.exists(db_path):
+#         print("🔄 正在创建 GFF 数据库...")
 #         gffutils.create_db(
 #             gff_file,
-#             dbfn=gff_file + '.db',
+#             dbfn=db_path,
 #             force=True,
 #             keep_order=True,
-#             merge_strategy='merge',
-#             id_spec={'gene': 'ID', 'mRNA': 'ID', 'CDS':'Parent'},
+#             merge_strategy="merge",
+#             id_spec={"gene": "ID", "mRNA": "ID", "CDS": "Parent"},
 #             disable_infer_genes=True,
 #             disable_infer_transcripts=True
 #         )
-#     db = gffutils.FeatureDB(gff_file + '.db')
+#     db = gffutils.FeatureDB(db_path)
 #     gene_lengths = {}
-#     for gene in db.features_of_type('gene'):
+#     for gene in db.features_of_type("gene"):
 #         total_length = 0
-#         for mRNA in db.children(gene, featuretype='mRNA'):
-#             exons = list(db.children(mRNA, featuretype='exon'))
+#         for mrna in db.children(gene, featuretype="mRNA", order_by="start"):
+#             exons = list(db.children(mrna, featuretype="exon", order_by="start"))
 #             if exons:
-#                 mRNA_length = sum(e.end - e.start + 1 for e in exons)
-#                 total_length += mRNA_length
+#                 mrna_len = sum(e.end - e.start + 1 for e in exons)
+#                 total_length += mrna_len
 #         if total_length > 0:
-#             gene_id = gene.id.replace('evm.model.', 'evm.TU.')
+#             gene_id = gene.id.replace("evm.model.", "evm.TU.")
 #             gene_lengths[gene_id] = total_length
-#     gene_length_df = pd.DataFrame(list(gene_lengths.items()), columns=['GeneID', 'length'])   
-#     return gene_length_df
-# def normalize_tpm(count_matrix, length_df, output_file):
-#     count_df = pd.read_excel(count_matrix)
+#     length_df = pd.DataFrame(
+#         gene_lengths.items(),
+#         columns=["GeneID", "length"]
+#     )
+#     out_len = os.path.join(OUT_DIR, "gene_lengths.csv")
+#     length_df.to_csv(out_len, index=False)
+#     print(f"✅ 基因长度表已生成：{out_len}")
+#     return length_df
+# def read_counts(count_file):
+#     if count_file.lower().endswith(".csv"):
+#         df = pd.read_csv(count_file)
+#     else:
+#         df = pd.read_excel(count_file)
+#     if df.columns[0] != "GeneID":
+#         df = df.rename(columns={df.columns[0]: "GeneID"})
+#     return df
+# def normalize_tpm(count_df, length_df, output_file):
 #     df = pd.merge(count_df, length_df, on='GeneID', how='inner')
 #     df = df[df['length'] > 0]
 #     sample_cols = [col for col in df.columns if col not in ['GeneID', 'length']]
@@ -138,22 +211,41 @@
 #         tpm_data[sample] = tpm
 #     tpm_df = pd.concat([df[['GeneID']], pd.DataFrame(tpm_data)], axis=1)
 #     tpm_df.to_excel(output_file, index=False)
-#     print(f"TPM标准化完成: {output_file} (总条目数: {len(tpm_df)})")
-#     return tpm_df
-# def main():
-#     count_matrix = "/Users/lemon/Desktop/total_matrix.xlsx"
-#     gff_file = "/Users/lemon/Desktop/Eu_gff.gff"
-#     output_file = "/Users/lemon/Desktop/total_matrix_tpm.xlsx"
-#     length_df = prepare_length_data(gff_file)
-#     normalize_tpm(count_matrix, length_df, output_file)
 # if __name__ == "__main__":
-#     main()
+#     length_df = prepare_length_data(GFF_FILE)
+#     count_df = read_counts(COUNT_FILE)
+#     normalize_tpm(count_df, length_df, os.path.join(OUT_DIR, "total_all_matrix_tpm.xlsx"))
 
-# 提取特定基因表达量
+# # 提取特定基因表达量
+# import pandas as pd
+# id_mapping_df = pd.read_excel(r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\rubber.xlsx", sheet_name="Sheet2")
+# data_df = pd.read_excel(r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Eu_tissue.xlsx")
+# mapped_ids = id_mapping_df['ID']
+# mapped_df = data_df[data_df['GeneID'].isin(mapped_ids)]
+# mapped_df.to_excel(r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Eu_tissue_mapped_gene.xlsx", index=False)
+
+# 替换ID
 import pandas as pd
-id_mapping_df = pd.read_excel("/Users/lemon/Desktop/rubber.xlsx", sheet_name="Sheet2")
-data_df = pd.read_excel("/Users/lemon/Desktop/Eu_tissue.xlsx")
-mapped_ids = id_mapping_df['ID']
-mapped_df = data_df[data_df['GeneID'].isin(mapped_ids)]
-mapped_df.to_excel("/Users/lemon/Desktop/Eu_tissue_mapped_gene.xlsx", index=False)
-print(mapped_df)
+map_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\rubber.xlsx"
+map_df = pd.read_excel(map_file, sheet_name="Sheet2")
+map_df = map_df[["ID", "name"]]
+id_to_name = dict(zip(map_df["ID"], map_df["name"]))
+data_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Eu_tissue_mapped_gene_pearson.xlsx"
+data_df = pd.read_excel(data_file, sheet_name="Sheet1")
+data_df["Var2"] = data_df["Var2"].map(id_to_name).fillna(data_df["Var2"])
+out_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Var2_replaced_with_name.xlsx"
+data_df.to_excel(out_file, index=False)
+print("替换完成，结果已保存为：", out_file)
+
+
+
+# # 提取候选肽基因的表达量
+# import pandas as pd
+# accession_file = r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\output_candidates_filtered.xlsx"
+# count_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\total_all_matrix.xlsx"
+# out_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\total_all_matrix_filtered.xlsx"
+# accession_df = pd.read_excel(accession_file, sheet_name="task1_all_no_overlap", engine="openpyxl")
+# count_df = pd.read_excel(count_file, engine="openpyxl")
+# accessions = set(accession_df["accession"].dropna().astype(str))
+# filtered_count_df = count_df[count_df["GeneID"].astype(str).isin(accessions)]
+# filtered_count_df.to_excel(out_file, index=False)
