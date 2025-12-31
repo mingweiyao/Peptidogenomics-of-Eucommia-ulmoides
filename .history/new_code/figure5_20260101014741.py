@@ -240,7 +240,7 @@
 # 提取|r|>0.8, p<0.05的基因的tpm表达量，然后计算相关性
 import pandas as pd
 id_mapping_df = pd.read_excel("/Volumes/caca/work_mechanism/figure5/rubber/Eu_tissue_mapped_gene_pearson.xlsx", sheet_name="Sheet2")
-data_df = pd.read_excel("/Volumes/caca/work_mechanism/figure5/rubber/Eu_tissue.xlsx")
+data_df = pd.read_excel("/Volumes/caca/work_mechanism/total_all_matrix_tpm.xlsx")
 mapped_ids = id_mapping_df['ID']
 mapped_df = data_df[data_df['GeneID'].isin(mapped_ids)]
 mapped_df.to_excel("/Volumes/caca/work_mechanism/figure5/rubber/Eu_tissue_mapped_gene_pearson_tpm.xlsx", index=False)

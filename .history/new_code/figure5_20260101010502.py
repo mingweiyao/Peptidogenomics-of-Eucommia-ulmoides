@@ -224,26 +224,20 @@
 # mapped_df = data_df[data_df['GeneID'].isin(mapped_ids)]
 # mapped_df.to_excel(r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Eu_tissue_mapped_gene.xlsx", index=False)
 
-# # 替换ID
-# import pandas as pd
-# map_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\rubber.xlsx"
-# map_df = pd.read_excel(map_file, sheet_name="Sheet2")
-# map_df = map_df[["ID", "name"]]
-# id_to_name = dict(zip(map_df["ID"], map_df["name"]))
-# data_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Eu_tissue_mapped_gene_pearson.xlsx"
-# data_df = pd.read_excel(data_file, sheet_name="Sheet1")
-# data_df["Var2"] = data_df["Var2"].map(id_to_name).fillna(data_df["Var2"])
-# out_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Var2_replaced_with_name.xlsx"
-# data_df.to_excel(out_file, index=False)
-# print("替换完成，结果已保存为：", out_file)
-
-# 提取|r|>0.8, p<0.05的基因的tpm表达量，然后计算相关性
+# 替换ID
 import pandas as pd
-id_mapping_df = pd.read_excel("/Volumes/caca/work_mechanism/figure5/rubber/Eu_tissue_mapped_gene_pearson.xlsx", sheet_name="Sheet2")
-data_df = pd.read_excel("/Volumes/caca/work_mechanism/figure5/rubber/Eu_tissue.xlsx")
-mapped_ids = id_mapping_df['ID']
-mapped_df = data_df[data_df['GeneID'].isin(mapped_ids)]
-mapped_df.to_excel("/Volumes/caca/work_mechanism/figure5/rubber/Eu_tissue_mapped_gene_pearson_tpm.xlsx", index=False)
+map_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\rubber.xlsx"
+map_df = pd.read_excel(map_file, sheet_name="Sheet2")
+map_df = map_df[["ID", "name"]]
+id_to_name = dict(zip(map_df["ID"], map_df["name"]))
+data_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Eu_tissue_mapped_gene_pearson.xlsx"
+data_df = pd.read_excel(data_file, sheet_name="Sheet1")
+data_df["Var2"] = data_df["Var2"].map(id_to_name).fillna(data_df["Var2"])
+out_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Var2_replaced_with_name.xlsx"
+data_df.to_excel(out_file, index=False)
+print("替换完成，结果已保存为：", out_file)
+
+
 
 # # 提取候选肽基因的表达量
 # import pandas as pd
