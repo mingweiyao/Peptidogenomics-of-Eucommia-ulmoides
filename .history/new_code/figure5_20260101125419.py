@@ -265,6 +265,7 @@ def main():
     id_df = pd.read_excel(IN_FILE, sheet_name=ID_SHEET)
     id_df = id_df[["Var2", "Group"]].dropna(subset=["Var2", "Group"])
     var2_to_group = dict(zip(id_df["Var2"], id_df["Group"]))
+
     df = pd.read_excel(IN_FILE, sheet_name=DATA_SHEET)
     df = df[["Var1", "Var2"]].dropna(subset=["Var1", "Var2"])
     df["Group"] = df["Var2"].map(var2_to_group)
@@ -275,6 +276,13 @@ def main():
         .apply(lambda s: unique_keep_order(s.tolist()))
         .to_dict()
     )
+
+    # 如果你想保留重复值，把上面 grouped 换成下面这一段：
+    # grouped = (
+    #     df_mapped.groupby("Group")["Var1"]
+    #     .apply(lambda s: [x for x in s.tolist() if not pd.isna(x)])
+    #     .to_dict()
+    # )
     out_df = pd.DataFrame({g: pd.Series(v) for g, v in grouped.items()})
     with pd.ExcelWriter(OUT_FILE, engine="openpyxl") as writer:
         out_df.to_excel(writer, sheet_name="Group_to_Var1", index=False)
@@ -282,6 +290,7 @@ def main():
             unmapped.to_excel(writer, sheet_name="Unmapped", index=False)
 if __name__ == "__main__":
     main()
+
 
 # # 提取候选肽基因的表达量
 # import pandas as pd
