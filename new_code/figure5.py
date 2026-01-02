@@ -229,7 +229,7 @@
 # map_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\rubber.xlsx"
 # map_df = pd.read_excel(map_file, sheet_name="Sheet2")
 # map_df = map_df[["ID", "name"]]
-# id_to_name = dict(zip(map_df["ID"], map_df["name"]))
+# id_to_name = dict(zip(map_df["name"], map_df["ID"]))
 # data_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Eu_tissue_mapped_gene_pearson.xlsx"
 # data_df = pd.read_excel(data_file, sheet_name="Sheet1")
 # data_df["Var2"] = data_df["Var2"].map(id_to_name).fillna(data_df["Var2"])
@@ -245,43 +245,115 @@
 # mapped_df = data_df[data_df['GeneID'].isin(mapped_ids)]
 # mapped_df.to_excel("/Volumes/caca/work_mechanism/figure5/rubber/Eu_tissue_mapped_gene_pearson_tpm.xlsx", index=False)
 
-# 提取不同Group的量
-import pandas as pd
-IN_FILE = "/Volumes/caca/work_mechanism/figure5/rubber/Eu_tissue_mapped_gene_pearson.xlsx"
-OUT_FILE = "/Volumes/caca/work_mechanism/figure5/rubber/Eu_tissue_mapped_gene_pearson_group.xlsx"
-ID_SHEET = "id_group"
-DATA_SHEET = "Sheet1"
-def unique_keep_order(seq):
-    seen = set()
-    out = []
-    for x in seq:
-        if pd.isna(x):
-            continue
-        if x not in seen:
-            seen.add(x)
-            out.append(x)
-    return out
-def main():
-    id_df = pd.read_excel(IN_FILE, sheet_name=ID_SHEET)
-    id_df = id_df[["Var2", "Group"]].dropna(subset=["Var2", "Group"])
-    var2_to_group = dict(zip(id_df["Var2"], id_df["Group"]))
-    df = pd.read_excel(IN_FILE, sheet_name=DATA_SHEET)
-    df = df[["Var1", "Var2"]].dropna(subset=["Var1", "Var2"])
-    df["Group"] = df["Var2"].map(var2_to_group)
-    unmapped = df[df["Group"].isna()].copy()
-    df_mapped = df.dropna(subset=["Group"]).copy()
-    grouped = (
-        df_mapped.groupby("Group")["Var1"]
-        .apply(lambda s: unique_keep_order(s.tolist()))
-        .to_dict()
-    )
-    out_df = pd.DataFrame({g: pd.Series(v) for g, v in grouped.items()})
-    with pd.ExcelWriter(OUT_FILE, engine="openpyxl") as writer:
-        out_df.to_excel(writer, sheet_name="Group_to_Var1", index=False)
-        if not unmapped.empty:
-            unmapped.to_excel(writer, sheet_name="Unmapped", index=False)
-if __name__ == "__main__":
-    main()
+# # 提取不同Group的量
+# import pandas as pd
+# IN_FILE = "/Volumes/caca/work_mechanism/figure5/rubber/Eu_tissue_mapped_gene_pearson.xlsx"
+# OUT_FILE = "/Volumes/caca/work_mechanism/figure5/rubber/Eu_tissue_mapped_gene_pearson_group.xlsx"
+# ID_SHEET = "id_group"
+# DATA_SHEET = "Sheet1"
+# def unique_keep_order(seq):
+#     seen = set()
+#     out = []
+#     for x in seq:
+#         if pd.isna(x):
+#             continue
+#         if x not in seen:
+#             seen.add(x)
+#             out.append(x)
+#     return out
+# def main():
+#     id_df = pd.read_excel(IN_FILE, sheet_name=ID_SHEET)
+#     id_df = id_df[["Var2", "Group"]].dropna(subset=["Var2", "Group"])
+#     var2_to_group = dict(zip(id_df["Var2"], id_df["Group"]))
+#     df = pd.read_excel(IN_FILE, sheet_name=DATA_SHEET)
+#     df = df[["Var1", "Var2"]].dropna(subset=["Var1", "Var2"])
+#     df["Group"] = df["Var2"].map(var2_to_group)
+#     unmapped = df[df["Group"].isna()].copy()
+#     df_mapped = df.dropna(subset=["Group"]).copy()
+#     grouped = (
+#         df_mapped.groupby("Group")["Var1"]
+#         .apply(lambda s: unique_keep_order(s.tolist()))
+#         .to_dict()
+#     )
+#     out_df = pd.DataFrame({g: pd.Series(v) for g, v in grouped.items()})
+#     with pd.ExcelWriter(OUT_FILE, engine="openpyxl") as writer:
+#         out_df.to_excel(writer, sheet_name="Group_to_Var1", index=False)
+#         if not unmapped.empty:
+#             unmapped.to_excel(writer, sheet_name="Unmapped", index=False)
+# if __name__ == "__main__":
+#     main()
+
+# # 按group提取pearson子矩阵
+# import os
+# import re
+# import pandas as pd
+# IN_FILE = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Eu_tissue_mapped_gene_pearson.xlsx"
+# PEARSON_FILE = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\pearson_r_p.xlsx"
+# PEARSON_SHEET = "P"
+# OUT_DIR = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\group_pearson_outputs_P"
+# ID_SHEET = "id_group"
+# DATA_SHEET = "Sheet1"
+# def sanitize_filename(name: str) -> str:
+#     """清理 group 名称用于文件名"""
+#     name = str(name)
+#     name = re.sub(r'[\\/:*?"<>|]+', "_", name)
+#     name = name.strip()
+#     return name[:150] if len(name) > 150 else name
+# def load_mapping_tables(in_file: str):
+#     id_df = pd.read_excel(in_file, sheet_name=ID_SHEET, dtype=str)
+#     id_df = id_df[["Var2", "Group"]].dropna(subset=["Var2", "Group"])
+#     df = pd.read_excel(in_file, sheet_name=DATA_SHEET, dtype=str)
+#     key_col = "Var2_1"
+#     df = df[["Var1", "Var2", key_col]].dropna(subset=["Var1", "Var2", key_col]).copy()
+#     return id_df, df, key_col
+# def load_pearson_matrix(pearson_file: str, pearson_sheet):
+#     pearson = pd.read_excel(pearson_file, sheet_name=pearson_sheet, header=0)
+#     pearson.columns = [str(c).strip() for c in pearson.columns]
+#     idx_col = pearson.columns[0]
+#     pearson[idx_col] = pearson[idx_col].astype(str).str.strip()
+#     pearson = pearson.set_index(idx_col)
+#     pearson.columns = [str(c).strip() for c in pearson.columns]
+#     pearson = pearson.apply(pd.to_numeric, errors="coerce")
+#     return pearson
+# def main():
+#     os.makedirs(OUT_DIR, exist_ok=True)
+#     id_df, pair_df, key_col = load_mapping_tables(IN_FILE)
+#     pearson = load_pearson_matrix(PEARSON_FILE, PEARSON_SHEET)
+#     group_to_var2 = (id_df.groupby("Group")["Var2"].apply(lambda s: list(dict.fromkeys(s.tolist()))).to_dict())
+#     summary_rows = []
+#     for group, var2_list in group_to_var2.items():
+#         sub = pair_df[pair_df["Var2"].isin(var2_list)].copy()
+#         var1_list = list(dict.fromkeys(sub["Var1"].tolist()))
+#         var2_1_list = list(dict.fromkeys(sub[key_col].tolist()))
+#         var1_in = [x for x in var1_list if x in pearson.index]
+#         var2_1_in = [x for x in var2_1_list if x in pearson.columns]
+#         submat = pearson.loc[var1_in, var2_1_in]
+#         out_name = sanitize_filename(group)
+#         out_path = os.path.join(OUT_DIR, f"{out_name}.xlsx")
+#         with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
+#             submat.to_excel(writer, sheet_name="pearson_submatrix")
+#             sub.to_excel(writer, sheet_name="pairs_Var2_Var1", index=False)
+#             missing_var1 = [x for x in var1_list if x not in pearson.index]
+#             missing_var2_1 = [x for x in var2_1_list if x not in pearson.columns]
+#             pd.DataFrame({"missing_Var1": missing_var1}).to_excel(writer, sheet_name="missing_Var1", index=False)
+#             pd.DataFrame({"missing_Var2_1": missing_var2_1}).to_excel(writer, sheet_name="missing_Var2_1", index=False)
+#         summary_rows.append({
+#             "Group": group,
+#             "Var2_count(id_group)": len(var2_list),
+#             "Pairs_count(Sheet1)": len(sub),
+#             "Var1_total(Sheet1)": len(var1_list),
+#             "Var2_1_total(Sheet1)": len(var2_1_list),
+#             "Var1_in_pearson": len(var1_in),
+#             "Var2_1_in_pearson": len(var2_1_in),
+#             "Submatrix_shape": f"{submat.shape[0]}x{submat.shape[1]}",
+#             "Output": out_path
+#         })
+#     summary_df = pd.DataFrame(summary_rows)
+#     summary_path = os.path.join(OUT_DIR, "SUMMARY.xlsx")
+#     summary_df.to_excel(summary_path, index=False)
+# if __name__ == "__main__":
+#     main()
+
 
 # # 提取候选肽基因的表达量
 # import pandas as pd
