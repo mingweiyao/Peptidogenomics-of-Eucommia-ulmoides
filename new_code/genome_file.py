@@ -39,7 +39,7 @@ def file_analysis(genome_file, gff_file, new_genome_file, new_gff_file, excel_in
 
 def main():
     genome_file = r"D:\Desktop\peptidemicro\00file\01figure\Eu_genome_modified\Eu_genome.fasta"
-    gff_file = r"D:\Desktop\peptidemicro\00file\01figure\Eu_genome_modified\GWHBISF00000000.gff"
+    gff_file = r"D:\Desktop\peptidemicro\00file\01figure\Eu_genome_modified\finally_sp_info.gff3"
     excel_info = r"D:\Desktop\peptidemicro\00file\01figure\Eu_genome_modified\finally_expressed_sp_info.xlsx"
     tss_file = r"D:\Desktop\peptidemicro\00file\01figure\Eu_genome_modified\figure.xlsx"
     new_genome_file = r"D:\Desktop\peptidemicro\00file\01figure\Eu_genome_modified\new_genome.fasta"

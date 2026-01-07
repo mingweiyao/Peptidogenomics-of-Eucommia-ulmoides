@@ -52,9 +52,31 @@
 #     except Exception as e:
 #         print(f"写入GFF文件失败: {e}")
 # excel_file = r"D:\Desktop\peptidemicro\00file\01figure\Eu_genome_modified\new_sp_info.xlsx"
-# output_gff = r"D:\Desktop\peptidemicro\00file\01figure\figure3\temp_file\unique.gff"
-# df = pd.read_excel(excel_file, sheet_name='unique')
+# output_gff = r"D:\Desktop\peptidemicro\00file\01figure\Eu_genome_modified\new_sp_info_chrom.gff3"
+# df = pd.read_excel(excel_file, sheet_name='chrom')
 # excel_to_gff3(df, output_gff)
+
+# # 染色体密度图（R）
+# library(RIdeogram)
+
+# Eu_karyotype <- read.table("D:/Desktop/peptidemicro/00file/01figure/figure3/figure3c_seq_len.txt", header = T, stringsAsFactors = F)
+# sp_density <- GFFex(input = "D:/Desktop/peptidemicro/00file/01figure/Eu_genome_modified/new_sp_info_chrom.gff3", 
+#                     karyotype = "D:/Desktop/peptidemicro/00file/01figure/figure3/figure3c_seq_len.txt", 
+#                     feature = "gene",
+#                     window = 2000000)
+# label_file <- read.table("D:/Desktop/peptidemicro/00file/01figure/figure3/figure3c_label_file.txt", sep = "\t", header = T, stringsAsFactors = F)
+# ideogram(karyotype = Eu_karyotype, overlaid = sp_density, label = label_file, label_type = "marker")
+# ideogram(karyotype = Eu_karyotype, overlaid = sp_density)
+# convertSVG("chromosome.svg", device = "pdf")
+
+# write.table(
+#   sp_density,
+#   file = "D:/Desktop/peptidemicro/00file/01figure/figure3/figure3c_sp_density.txt",
+#   sep = "\t",
+#   row.names = FALSE,
+#   col.names = TRUE,
+#   quote = FALSE
+# )
 
 # # Length_vs_NCP.pdf
 # import pandas as pd
@@ -80,7 +102,7 @@
 #     if chr_name:
 #         mapping.append({"chrom": gwh_id, "Chr": chr_name})
 #         chr_sizes[chr_name] = chr_length
-# gff_df = pd.read_excel(excel_file, sheet_name='unique_chrom')
+# gff_df = pd.read_excel(excel_file, sheet_name='chrom')
 # length_df = pd.DataFrame([
 #     {"chrom": chr_name, "Physical_Size": size / 1e6}
 #     for chr_name, size in chr_sizes.items()
