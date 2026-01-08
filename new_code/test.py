@@ -1,0 +1,555 @@
+import os, re, math, json, random
+from collections import Counter, defaultdict
+from Bio import SeqIO
+from Bio.Seq import Seq
+import pandas as pd
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+
+# =========================================================
+# CONFIG
+# =========================================================
+CDS_FA = "data/CDS.fa"
+GENOME_FA = "data/genome.fa"
+CANDIDATES_XLSX = "data/candidates.xlsx"
+GFF3_FA = "data/genome.gff3"
+OUT_XLSX = "out/candidates_scored.xlsx"
+
+SHEET_NAME = ""
+
+# upstream window: [-120, -20) => 100nt
+UP_START = 100
+UP_END = 0
+UP_LEN = 100
+
+# TP-only 3-mer background removal via dinucleotide-preserving shuffle
+TP_ONLY_3MER_SHUFFLES = 200   # 100~300 都可以，越大越稳越慢
+TP_ONLY_3MER_MIN_Z = 2.5      # 用于筛选“显著超背景”的 3-mer（也可不用筛选，直接全量加权）
+TP_ONLY_3MER_ARTIFACT = "out/tp_only_3mer_shuffle_weights.json"
+TP_ONLY_5MER_SHUFFLES = 200   # 100~300 都可以，越大越稳越慢
+TP_ONLY_5MER_MIN_Z = 2.5      # 用于筛选“显著超背景”的 3-mer（也可不用筛选，直接全量加权）
+TP_ONLY_5MER_ARTIFACT = "out/tp_only_3mer5mer_shuffle_weights.json"
+
+# ================ Codon prior schemes for sensitivity analysis ================
+CODON_BONUS_SCHEMES = {
+    "weak":   {"ATG": 0.0, "CTG": -0.1, "GTG": -0.2, "TTG": -0.2, "ACG": -0.3},
+    "medium": {"ATG": 0.0, "CTG": -0.5, "GTG": -1.0, "TTG": -1.0, "ACG": -2.0},
+    "strong": {"ATG": 0.0, "CTG": -1.0, "GTG": -2.0, "TTG": -2.0, "ACG": -3.0},
+}
+DEFAULT_OTHER_CODON_BONUS = -3.0
+
+# =========================================================
+# Genome / CDS parsing
+# =========================================================
+def parse_genome_file(genome_file):
+    return {rec.id: str(rec.seq).upper() for rec in SeqIO.parse(genome_file, "fasta")}
+def parse_gff_file(gff3_file):
+    has_5utr = set()
+    with open(gff3_file, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 9:
+                continue
+            if parts[2] != "five_prime_UTR":
+                continue
+            m = re.search(r"Parent_Accession=([^;]+)", parts[8])
+            if m:
+                has_5utr.add(m.group(1))
+    return has_5utr
+def parse_tid_details(description, cds_seq, genome_dict):
+    chrom, exon_part, strand = description.split("\t")[3].split("=")[1].split(": ")
+    exon_coords = [(int(s), int(e)) for s, e in (b.split("-") for b in exon_part.split(","))]
+    g = genome_dict[chrom]
+    cds_seq = cds_seq.upper()
+    if strand == "+":
+        start = min(s for s, _ in exon_coords)
+        if start - 101 < 0: return None
+        up = g[start - 101: start - 1]
+        if len(up) != 100: return None
+        return (up + cds_seq).upper()
+    elif strand == "-":
+        end = max(e for _, e in exon_coords)
+        if end + 100 > len(g): return None
+        up = str(Seq(g[end: end + 100]).reverse_complement())
+        if len(up) != 100: return None
+        return (up + cds_seq).upper()
+    return None
+def load_cds_fasta(cds_file, gff3_file, genome_dict):
+    has_5utr = parse_gff_file(gff3_file)
+    cds_dict = {}
+    for record in SeqIO.parse(cds_file, "fasta"):
+        tid = record.id
+        if tid not in has_5utr: continue
+        merged = parse_tid_details(record.description, str(record.seq), genome_dict)
+        if merged is None: continue
+        cds_dict[tid] = merged
+    return cds_dict
+# =========================================================
+# Training data: TP/TN sampling (only used for LR training on context, not for motif discovery)
+# =========================================================
+def sample_tp_tn(cds_dict, tn_per_tx=5, min_internal_nt=30, seed=13):
+    import random
+    random.seed(seed)
+    rows = []
+    for tid, seq in cds_dict.items():
+        if seq[100:103] != "ATG": continue
+        rows.append((tid, 100, seq, 1))
+        cand = []
+        for i in range(103, len(seq) - 2, 3):
+            if i - 100 < min_internal_nt: continue
+            if seq[i:i+3] == "ATG": cand.append(i)
+        if cand:
+            picks = random.sample(cand, k=min(tn_per_tx, len(cand)))
+            for i in picks:
+                rows.append((tid, i, seq, 0))
+    return pd.DataFrame(rows, columns=["tid", "tis_pos", "seq", "label"])
+def kozak_window(seq, tis_pos):
+    s = tis_pos - 6
+    e = tis_pos + 7
+    if s < 0 or e > len(seq):
+        return None
+    w = seq[s:e]
+    return w if len(w) == 13 else None
+def upstream_window(seq, tis_pos0):
+    """100nt upstream: [-120, -20)"""
+    s = tis_pos0 - UP_START
+    e = tis_pos0 - UP_END
+    if s < 0 or e > len(seq) or e <= s: return None
+    up = seq[s:e]
+    return up if len(up) == UP_LEN else None
+def compute_bg(cds_dict):
+    """Background base freq on CDS region only (skip upstream120)"""
+    c = {b: 0 for b in "ACGT"}
+    for seq in cds_dict.values():
+        for ch in seq[120:]:
+            if ch in c:
+                c[ch] += 1
+    tot = sum(c.values())
+    return {b: (c[b] / tot if tot else 0.25) for b in c}
+def build_pwm(tp_windows, pseudocount=1.0):
+    if not tp_windows:
+        raise ValueError("TP kozak windows 为空，无法建 PWM")
+    L = len(tp_windows[0])
+    counts = {b: np.full(L, pseudocount, dtype=float) for b in "ACGT"}
+    for w in tp_windows:
+        if len(w) != L: continue
+        for i, ch in enumerate(w):
+            if ch in counts:
+                counts[ch][i] += 1.0
+    totals = sum(counts[b] for b in "ACGT")
+    return {b: (counts[b] / totals).tolist() for b in "ACGT"}
+def kozak_logodds(w, pwm, bg, eps=1e-12):
+    s = 0.0
+    for i, ch in enumerate(w):
+        if ch in "ACGT":
+            ratio = pwm[ch][i] / max(bg[ch], eps)
+            s += math.log2(max(ratio, eps))
+    return s
+def cu_fraction(up):
+    return (sum(1 for ch in up if ch in "CT") / len(up)) if up else float("nan")
+# =========================================================
+# TP-only 3-mer enrichment via dinucleotide-preserving shuffle
+# =========================================================
+def count_kmers(seq, k):
+    c = Counter()
+    seq = seq.upper()
+    L = len(seq)
+    pat = re.compile(rf"[ACGT]{{{k}}}")
+    for i in range(L - k + 1):
+        s = seq[i:i+k]
+        if pat.fullmatch(s):
+            c[s] += 1
+    return c
+
+def _build_dinucl_graph(seq):
+    """Return adjacency list for dinucleotide edges for Eulerian trail."""
+    seq = seq.upper()
+    nodes = [seq[i:i+2] for i in range(len(seq) - 1)]
+    # Actually we need edges from 2-mer to next base, classic dinucl shuffle uses graph on single bases:
+    # But easiest robust is graph on single bases edges (a->b) for each dinucleotide.
+    # We'll implement classic method using single-base multigraph.
+    adj = {b: [] for b in "ACGT"}
+    for a, b in zip(seq[:-1], seq[1:]):
+        if a in adj and b in "ACGT":
+            adj[a].append(b)
+        else:
+            return None
+    return adj
+
+def _eulerian_trail_from_adj(adj, start):
+    """Hierholzer algorithm on directed multigraph stored as adjacency lists (lists of next nodes)."""
+    # copy & shuffle outgoing edges
+    local = {u: adj[u][:] for u in adj}
+    for u in local:
+        random.shuffle(local[u])
+
+    stack = [start]
+    path = []
+    while stack:
+        v = stack[-1]
+        if local[v]:
+            stack.append(local[v].pop())
+        else:
+            path.append(stack.pop())
+    path.reverse()
+    return path
+
+def dinuc_shuffle(seq, max_tries=20):
+    """
+    Produce a shuffle that preserves dinucleotide counts (directed edges a->b),
+    keeps the same first base, and uses an Eulerian trail.
+    """
+    seq = seq.upper()
+    if len(seq) < 2 or any(ch not in "ACGT" for ch in seq):
+        return None
+
+    adj = _build_dinucl_graph(seq)
+    if adj is None:
+        return None
+
+    start = seq[0]
+
+    # Need an Eulerian trail existence; for this specific construction (derived from a real sequence),
+    # an Eulerian trail exists. Random shuffling of adjacency can occasionally yield dead-end in naive builds,
+    # but Hierholzer always yields a trail that uses all edges if graph is Eulerian.
+    # However, start node must be compatible; we keep original start.
+    for _ in range(max_tries):
+        path = _eulerian_trail_from_adj(adj, start)
+        if len(path) == len(seq):
+            return "".join(path)
+    return None
+
+def learn_tp_only_kmer_weights(tp_ups, k, n_shuffle=200, min_z=2.5, seed=7, top_keep=None):
+    """
+    Input: list of TP upstream sequences (100nt)
+    Output:
+      weights_z: dict 3mer -> z-score
+      obs: dict 3mer -> observed total counts
+      exp: dict 3mer -> expected total counts under dinuc shuffle
+      sd:  dict 3mer -> std under dinuc shuffle
+    """
+    random.seed(seed)
+
+    obs = Counter()
+    for up in tp_ups:
+        obs.update(count_kmers(up))
+
+    # accumulate shuffled counts per replicate
+    kmers = [''.join(p) for p in __import__("itertools").product("ACGT", repeat=k)]
+    k2i = {km:i for i,km in enumerate(kmers)}
+
+    rep_sums = np.zeros((n_shuffle, len(kmers)), dtype=np.float64)
+
+    for r in range(n_shuffle):
+        c = np.zeros(len(kmers), dtype=np.float64)
+        for up in tp_ups:
+            sh = dinuc_shuffle(up)
+            if sh is None:
+                continue
+            # count kmers in shuffled
+            L = len(sh)
+            for i in range(L - k + 1):
+                km = sh[i:i+k]
+                j = k2i.get(km)
+                if j is not None:
+                    c[j] += 1.0
+        rep_sums[r] = c
+
+    exp = rep_sums.mean(axis=0)
+    sd = rep_sums.std(axis=0, ddof=1)
+    sd[sd == 0] = 1.0
+
+    obs_arr = np.zeros(len(kmers), dtype=np.float64)
+    for km, i in k2i.items():
+        obs_arr[i] = float(obs.get(km, 0))
+
+    z = (obs_arr - exp) / sd
+
+    # pick weights
+    weights_z = {km: float(z[k2i[km]]) for km in kmers if z[k2i[km]] >= min_z}
+
+    # optional: keep only top N by z to reduce downstream time
+    if top_keep is not None and len(weights_z) > top_keep:
+        weights_z = dict(sorted(weights_z.items(), key=lambda x: x[1], reverse=True)[:top_keep])
+
+    full = {
+        "params": {"k": k, "n_shuffle": n_shuffle, "min_z": min_z, "seed": seed,
+                   "window": f"[-{UP_START}, -{UP_END})", "up_len": UP_LEN, "top_keep": top_keep},
+        "weights_z": weights_z,
+    }
+    return full
+
+def tp_only_kmer_score(up, weights_z, k):
+    if up is None or len(up) < k:
+        return float("nan")
+    up = up.upper()
+    s = 0.0
+    L = len(up)
+    for i in range(L - k + 1):
+        km = up[i:i+k]
+        w = weights_z.get(km)
+        if w is not None:
+            s += w
+    return float(s)
+
+def tp_only_3mer_score(up, weights_z):
+    """Weighted sum of 3-mer counts in up; weights are z-scores."""
+    if up is None or len(up) < 3:
+        return float("nan")
+    up = up.upper()
+    s = 0.0
+    for i in range(len(up) - 2):
+        tri = up[i:i+3]
+        w = weights_z.get(tri)
+        if w is not None:
+            s += w
+    return float(s)
+
+def ensure_tp_only_artifact(cds_dict):
+    """
+    Build (or load) TP-only 3-mer weights artifact.
+    Uses TP annotated start (ATG at [120:123]) to collect TP upstream windows.
+    """
+    os.makedirs(os.path.dirname(TP_ONLY_5MER_ARTIFACT), exist_ok=True)
+
+    if os.path.exists(TP_ONLY_5MER_ARTIFACT):
+        with open(TP_ONLY_5MER_ARTIFACT, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    tp_ups = []
+    for tid, seq in cds_dict.items():
+        if seq[120:123] != "ATG":
+            continue
+        up = upstream_window(seq, 120)
+        if up is not None and re.fullmatch(r"[ACGT]{100}", up):
+            tp_ups.append(up)
+
+    if len(tp_ups) < 50:
+        raise ValueError(f"TP upstream windows 太少（{len(tp_ups)}），无法建 TP-only kmer 背景模型")
+
+    art3 = learn_tp_only_kmer_weights(
+        tp_ups, k=3, n_shuffle=TP_ONLY_3MER_SHUFFLES, min_z=TP_ONLY_3MER_MIN_Z, seed=7, top_keep=None
+    )
+    art5 = learn_tp_only_kmer_weights(
+        tp_ups, k=5, n_shuffle=TP_ONLY_5MER_SHUFFLES, min_z=TP_ONLY_5MER_MIN_Z, seed=11, top_keep=500
+    )
+
+    obj = {
+        "params": {"window": f"[-{UP_START}, -{UP_END})", "up_len": UP_LEN},
+        "3mer": art3,
+        "5mer": art5,
+    }
+
+    with open(TP_ONLY_5MER_ARTIFACT, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2)
+
+    return obj
+
+# =========================================================
+# Model training (LR on: kozak, cu_fraction, tp_only_3mer_score)
+# =========================================================
+def train_pwm_and_weights(cds_dict, w3, w5):
+    bg = compute_bg(cds_dict)
+    df = sample_tp_tn(cds_dict)
+    tp_ws = []
+    for _, r in df[df["label"] == 1].iterrows():
+        w = kozak_window(r["seq"], int(r["tis_pos"]))
+        if w is not None:
+            tp_ws.append(w)
+    pwm = build_pwm(tp_ws)
+    # LR features
+    X = []; y = []
+    for _, r in df.iterrows():
+        seq = r["seq"]; tis = int(r["tis_pos"])
+        w = kozak_window(seq, tis)
+        up = upstream_window(seq, tis)
+        if w is None or up is None: continue
+        kz = kozak_logodds(w, pwm, bg)
+        cu = cu_fraction(up)
+        s3 = tp_only_kmer_score(up, w3, 3)
+        s5 = tp_only_kmer_score(up, w5, 5)
+        X.append([kz, cu, s3])
+        y.append(int(r["label"]))
+    X = np.asarray(X, float)
+    y = np.asarray(y, int)
+    if X.shape[0] < 50: raise ValueError(f"训练样本过少：{X.shape[0]}")
+    mu = X.mean(axis=0)
+    sd = X.std(axis=0)
+    sd[sd == 0] = 1.0
+    Z = (X - mu) / sd
+    lr = LogisticRegression(penalty="l2", solver="liblinear", max_iter=2000)
+    lr.fit(Z, y)
+    weights = {
+        "w1": float(lr.coef_[0][0]),  # kozak
+        "w2": float(lr.coef_[0][1]),  # cu_fraction
+        "w3": float(lr.coef_[0][2]),  # tp_only_3mer_score
+        "w4": float(lr.coef_[0][3]),  # tp_only_5mer_score
+        "beta0": float(lr.intercept_[0]),
+    }
+    std = {
+        "mu": mu.tolist(),
+        "sd": sd.tolist(),
+        "feat": ["kozak", "cu_fraction", "tp_only_3mer_score", "tp_only_5mer_score"],
+    }
+    return pwm, bg, weights, std
+
+# =========================================================
+# Candidate scoring helpers
+# =========================================================
+def codon_bonus_by_scheme(codon, scheme_dict):
+    c = str(codon).upper()
+    return float(scheme_dict.get(c, DEFAULT_OTHER_CODON_BONUS))
+
+def make_candidate_key(row):
+    return f'{row["chr"]}|{row["strand"]}|{int(row["phy_start"])}|{int(row["phy_end"])}|{str(row["codon"]).upper()}'
+
+# =========================================================
+# Main scoring pipeline
+# =========================================================
+def score_candidates_excel():
+    os.makedirs(os.path.dirname(OUT_XLSX), exist_ok=True)
+    genome_dict = parse_genome_file(GENOME_FA)
+    cds_dict = load_cds_fasta(CDS_FA, GFF3_FA, genome_dict)
+
+    # TP-only 3-mer artifact
+    art = ensure_tp_only_artifact(cds_dict)
+    w3 = art["3mer"]["weights_z"]
+    w5 = art["5mer"]["weights_z"]
+
+    pwm, bg, weights, std = train_pwm_and_weights(cds_dict, w3, w5)
+
+    # read candidates
+    if SHEET_NAME is None or str(SHEET_NAME).strip() == "":
+        df_sp = pd.read_excel(CANDIDATES_XLSX)
+    else:
+        df_sp = pd.read_excel(CANDIDATES_XLSX, sheet_name=SHEET_NAME)
+
+    mu = np.array(std["mu"], float)
+    sd = np.array(std["sd"], float)
+
+    candidate_keys = []
+    kozak_scores = []
+    cu_fracs = []
+    tp3_scores = []
+    tp5_scores = []
+    tis_scores = {name: [] for name in CODON_BONUS_SCHEMES}
+
+    for _, r in df_sp.iterrows():
+        chrom = str(r["chr"])
+        strand = str(r["strand"])
+        start = int(r["phy_start"])
+        end = int(r["phy_end"])
+        codon = str(r.get("codon", "")).upper()
+
+        candidate_keys.append(make_candidate_key(r))
+
+        # basic checks
+        if chrom not in genome_dict:
+            kozak_scores.append(np.nan); cu_fracs.append(np.nan); tp3_scores.append(np.nan); tp5_scores.append(np.nan)
+            for name in CODON_BONUS_SCHEMES:
+                tis_scores[name].append(np.nan)
+            continue
+
+        w = str(r.get("kozak", "")).upper()[:13]
+        if len(w) != 13 or any(ch not in "ACGT" for ch in w):
+            kozak_scores.append(np.nan); cu_fracs.append(np.nan); tp3_scores.append(np.nan); tp5_scores.append(np.nan)
+            for name in CODON_BONUS_SCHEMES:
+                tis_scores[name].append(np.nan)
+            continue
+
+        g = genome_dict[chrom]
+
+        # upstream 100nt: [-120, -20)
+        if strand == "+":
+            left = start - 121
+            right = start - 21
+            up = g[left:right] if (left >= 0 and right <= len(g)) else None
+        else:
+            left = end + 20
+            right = end + 120
+            up = str(Seq(g[left:right]).reverse_complement()) if (left >= 0 and right <= len(g)) else None
+
+        if up is None or len(up) != 100 or any(ch not in "ACGT" for ch in up.upper()):
+            kozak_scores.append(np.nan); cu_fracs.append(np.nan); tp3_scores.append(np.nan); tp5_scores.append(np.nan)
+            for name in CODON_BONUS_SCHEMES:
+                tis_scores[name].append(np.nan)
+            continue
+
+        # features
+        kz = kozak_logodds(w, pwm, bg)
+        cu = cu_fraction(up)
+        s3 = tp_only_kmer_score(up, w3, 3)
+        s5 = tp_only_kmer_score(up, w5, 5)
+
+        z = (np.array([kz, cu, s3, s5], float) - mu) / sd
+
+        # LR logit score
+        score_base = (
+            weights["beta0"]
+            + weights["w1"] * z[0]
+            + weights["w2"] * z[1]
+            + weights["w3"] * z[2]
+            + weights["w4"] * z[3]
+        )
+
+        kozak_scores.append(kz)
+        cu_fracs.append(cu)
+        tp3_scores.append(s3)
+        tp5_scores.append(s5)
+
+        for scheme_name, scheme_dict in CODON_BONUS_SCHEMES.items():
+            tis_scores[scheme_name].append(score_base + codon_bonus_by_scheme(codon, scheme_dict))
+
+    # 5) write outputs
+    df_sp["candidate_key"] = candidate_keys
+    df_sp["kozak_score"] = kozak_scores
+    df_sp["cu_fraction"] = cu_fracs
+    df_sp["tp_only_3mer_score"] = tp3_scores
+    df_sp["tp_only_5mer_score"] = tp5_scores
+
+    for scheme_name in CODON_BONUS_SCHEMES:
+        score_col = f"tis_score_{scheme_name}"
+        rank_col = f"rank_{scheme_name}"
+        df_sp[score_col] = tis_scores[scheme_name]
+        df_sp[rank_col] = df_sp.groupby("peptide_id")[score_col].rank(ascending=False, method="first")
+        top3 = df_sp[df_sp[rank_col] <= 3].sort_values(["peptide_id", rank_col])
+        top3.to_excel(OUT_XLSX.replace(".xlsx", f"_top3_{scheme_name}.xlsx"), index=False)
+
+    df_sp.to_excel(OUT_XLSX, index=False)
+
+    # sensitivity summary
+    top1 = {}
+    for scheme_name in CODON_BONUS_SCHEMES:
+        score_col = f"tis_score_{scheme_name}"
+        idx = df_sp.groupby("peptide_id")[score_col].idxmax()
+        idx = idx.dropna().astype(int)
+        tmp = df_sp.loc[idx, ["peptide_id", "candidate_key"]].set_index("peptide_id")["candidate_key"]
+        top1[scheme_name] = tmp
+
+    summary = pd.DataFrame({
+        "top1_weak": top1.get("weak"),
+        "top1_medium": top1.get("medium"),
+        "top1_strong": top1.get("strong"),
+    })
+    summary["stable_top1"] = (summary["top1_weak"] == summary["top1_medium"]) & (summary["top1_medium"] == summary["top1_strong"])
+    summary = summary.reset_index()
+    summary.to_excel(OUT_XLSX.replace(".xlsx", "_sensitivity_summary.xlsx"), index=False)
+
+    # save artifacts
+    out_dir = os.path.dirname(OUT_XLSX)
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, "pwm.json"), "w", encoding="utf-8") as f:
+        json.dump(pwm, f, indent=2)
+    with open(os.path.join(out_dir, "weights.json"), "w", encoding="utf-8") as f:
+        json.dump(weights, f, indent=2)
+    with open(os.path.join(out_dir, "standardizer.json"), "w", encoding="utf-8") as f:
+        json.dump(std, f, indent=2)
+
+    # also save TP-only artifact near outputs (optional)
+    with open(os.path.join(out_dir, "tp_only_3mer5mer_shuffle_weights.json"), "w", encoding="utf-8") as f:
+        json.dump(art, f, indent=2)
+
+if __name__ == "__main__":
+    score_candidates_excel()
