@@ -10,19 +10,17 @@ import multiprocessing as mp
 # =========================================================
 # CONFIG
 # =========================================================
-INPUT_DIR = "/Volumes/caca/work_mechanism/mer"
-CDS_FA = os.path.join(INPUT_DIR, "Eu_CDS.fasta")
-GENOME_FA = os.path.join(INPUT_DIR, "Eu_genome.fasta")
-CANDIDATES_XLSX = os.path.join(INPUT_DIR, "output_candidates.xlsx")
-GFF3_FA = os.path.join(INPUT_DIR, "GWHBISF00000000.gff")
-OUT_DIR = os.path.join(INPUT_DIR, "out")
-OUT_XLSX = os.path.join(OUT_DIR, "candidates_scored.xlsx")
+CDS_FA = "/media/wanglab/caca/work_mechanism/mer/Eu_CDS.fasta"
+GENOME_FA = "/media/wanglab/caca/work_mechanism/mer/Eu_genome.fasta"
+CANDIDATES_XLSX = "/media/wanglab/caca/work_mechanism/mer/output_candidates.xlsx"
+GFF3_FA = "/media/wanglab/caca/work_mechanism/mer/GWHBISF00000000.gff"
+OUT_XLSX = "/media/wanglab/caca/work_mechanism/mer/out/candidates_scored.xlsx"
+OUT_DIR = "/media/wanglab/caca/work_mechanism/mer/out"
 SHEET_NAME = "output_candidates"
 
-THREADS = 110
 TP_ONLY_KMER_SHUFFLES = 200
 TP_ONLY_KMER_MIN_Z = 2.5
-TP_ONLY_KMER_ARTIFACT = os.path.join(OUT_DIR, "tp_only_kmer_shuffle_weights.json")
+TP_ONLY_KMER_ARTIFACT = "/media/wanglab/caca/work_mechanism/mer/out/tp_only_kmer_shuffle_weights.json"
 
 CODON_BONUS_SCHEMES = {
     "weak":   {"ATG": 0.0, "CTG": -0.1, "GTG": -0.2, "TTG": -0.2, "ACG": -0.3},
@@ -263,7 +261,7 @@ def _one_shuffle_rep(seed):
             if j is not None:
                 c[j] += 1.0
     return c
-def learn_tp_only_kmer_weights(tp_ups, k, n_shuffle=200, min_z=2.5, seed=7, top_keep=None, n_jobs=THREADS):
+def learn_tp_only_kmer_weights(tp_ups, k, n_shuffle=200, min_z=2.5, seed=7, top_keep=None, n_jobs=110):
     obs = Counter()
     for up in tp_ups:
         obs.update(count_kmers(up, k))
@@ -307,8 +305,8 @@ def ensure_tp_only_artifact(cds_dict):
         up = upstream_window(seq, 100)
         if up is not None and re.fullmatch(r"[ACGT]{100}", up): tp_ups.append(up)
     if len(tp_ups) < 50: raise ValueError(f"TP upstream windows 太少（{len(tp_ups)}），无法建 TP-only kmer 背景模型")
-    art3 = learn_tp_only_kmer_weights(tp_ups, k=3, n_shuffle=TP_ONLY_KMER_SHUFFLES, min_z=TP_ONLY_KMER_MIN_Z, seed=7, top_keep=None)
-    art5 = learn_tp_only_kmer_weights(tp_ups, k=5, n_shuffle=TP_ONLY_KMER_SHUFFLES, min_z=TP_ONLY_KMER_MIN_Z, seed=11, top_keep=500)
+    art3 = learn_tp_only_kmer_weights(tp_ups, k=3, n_shuffle=TP_ONLY_KMER_SHUFFLES, min_z=TP_ONLY_KMER_MIN_Z, seed=7, top_keep=None, n_jobs=48)
+    art5 = learn_tp_only_kmer_weights(tp_ups, k=5, n_shuffle=TP_ONLY_KMER_SHUFFLES, min_z=TP_ONLY_KMER_MIN_Z, seed=11, top_keep=500, n_jobs=48)
     obj = {
         "params": {"window": f"[-{100}, -{0})", "up_len": 100},
         "3mer": art3,
