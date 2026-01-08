@@ -11,15 +11,15 @@ import multiprocessing as mp
 # CONFIG
 # =========================================================
 INPUT_DIR = "/data/Eu/Eu_genome"
-CDS_FA = os.path.join(INPUT_DIR, "GWHBISF00000000.CDS.fasta")
-GENOME_FA = os.path.join(INPUT_DIR, "GWHBISF00000000.genome.fasta")
+CDS_FA = os.path.join(INPUT_DIR, "Eu_CDS.fasta")
+GENOME_FA = os.path.join(INPUT_DIR, "Eu_genome.fasta")
 CANDIDATES_XLSX = os.path.join(INPUT_DIR, "output_candidates.xlsx")
 GFF3_FA = os.path.join(INPUT_DIR, "GWHBISF00000000.gff")
-OUT_DIR = os.path.join(INPUT_DIR, "codon_prediction")
+OUT_DIR = os.path.join(INPUT_DIR, "out")
 OUT_XLSX = os.path.join(OUT_DIR, "candidates_scored.xlsx")
 SHEET_NAME = "output_candidates"
 
-THREADS = 50
+THREADS = 110
 TP_ONLY_KMER_SHUFFLES = 200
 TP_ONLY_KMER_MIN_Z = 2.5
 TP_ONLY_KMER_ARTIFACT = os.path.join(OUT_DIR, "tp_only_kmer_shuffle_weights.json")
@@ -34,17 +34,17 @@ DEFAULT_OTHER_CODON_BONUS = -3.0
 # =========================================================
 # CDS parsing
 # =========================================================
-def parse_gff_file(gff3_file):
-    has_5utr = set()
-    with open(gff3_file, "r", encoding="utf-8") as f:
-        for line in f:
-            if line.startswith("#"): continue
-            parts = line.rstrip("\n").split("\t")
-            if len(parts) < 9: continue
-            if parts[2] != "five_prime_UTR": continue
-            m = re.search(r"Parent_Accession=([^;]+)", parts[8])
-            if m: has_5utr.add(m.group(1))
-    return has_5utr
+# def parse_gff_file(gff3_file):
+#     has_5utr = set()
+#     with open(gff3_file, "r", encoding="utf-8") as f:
+#         for line in f:
+#             if line.startswith("#"): continue
+#             parts = line.rstrip("\n").split("\t")
+#             if len(parts) < 9: continue
+#             if parts[2] != "five_prime_UTR": continue
+#             m = re.search(r"Parent_Accession=([^;]+)", parts[8])
+#             if m: has_5utr.add(m.group(1))
+#     return has_5utr
 def parse_tid_details(description, cds_seq, genome_dict):
     chrom, exon_part, strand = description.split("\t")[3].split("=")[1].split(": ")
     exon_coords = [(int(s), int(e)) for s, e in (b.split("-") for b in exon_part.split(","))]
@@ -232,7 +232,8 @@ def count_kmers(seq, k):
     pat = re.compile(rf"[ACGT]{{{k}}}")
     for i in range(L - k + 1):
         s = seq[i:i+k]
-        if pat.fullmatch(s): c[s] += 1
+        if pat.fullmatch(s):
+            c[s] += 1
     return c
 _G_TP_UPS = None
 _G_K = None
@@ -269,11 +270,14 @@ def learn_tp_only_kmer_weights(tp_ups, k, n_shuffle=200, min_z=2.5, seed=7, top_
     kmers = [''.join(p) for p in __import__("itertools").product("ACGT", repeat=k)]
     k2i = {km: i for i, km in enumerate(kmers)}
     rep_seeds = [seed + 1000003 * r for r in range(n_shuffle)]
+    n_jobs = int(n_jobs)
     n_jobs = max(1, min(n_jobs, n_shuffle))
     chunksize = 1 if n_shuffle <= 400 else max(1, n_shuffle // (n_jobs * 4))
     with mp.get_context("fork").Pool(
-        processes=n_jobs, initializer=_init_worker,
-        initargs=(tp_ups, k, k2i, len(kmers))) as pool:
+        processes=n_jobs,
+        initializer=_init_worker,
+        initargs=(tp_ups, k, k2i, len(kmers)),
+    ) as pool:
         reps = pool.map(_one_shuffle_rep, rep_seeds, chunksize=chunksize)
     rep_sums = np.vstack(reps)
     exp = rep_sums.mean(axis=0)
@@ -320,7 +324,7 @@ def codon_bonus_by_scheme(codon, scheme_dict):
     c = str(codon).upper()
     return float(scheme_dict.get(c, DEFAULT_OTHER_CODON_BONUS))
 def make_candidate_key(row):
-    return f'{row["chrom"]}|{row["strand"]}|{int(row["phy_start"])}|{int(row["phy_end"])}|{str(row["codon"]).upper()}'
+    return f'{row["chr"]}|{row["strand"]}|{int(row["phy_start"])}|{int(row["phy_end"])}|{str(row["codon"]).upper()}'
 # =========================================================
 # Main scoring pipeline
 # =========================================================
@@ -342,7 +346,7 @@ def score_candidates_excel():
     tp5_scores = []
     tis_scores = {name: [] for name in CODON_BONUS_SCHEMES}   
     for _, r in df_sp.iterrows():
-        chrom = str(r["chrom"])
+        chrom = str(r["chr"])
         strand = str(r["strand"])
         start = int(r["phy_start"])
         end = int(r["phy_end"])
@@ -384,16 +388,16 @@ def score_candidates_excel():
         score_col = f"tis_score_{scheme_name}"
         rank_col = f"rank_{scheme_name}"
         df_sp[score_col] = tis_scores[scheme_name]
-        df_sp[rank_col] = df_sp.groupby("accession")[score_col].rank(ascending=False, method="first")
-        top3 = df_sp[df_sp[rank_col] <= 3].sort_values(["accession", rank_col])
+        df_sp[rank_col] = df_sp.groupby("peptide_id")[score_col].rank(ascending=False, method="first")
+        top3 = df_sp[df_sp[rank_col] <= 3].sort_values(["peptide_id", rank_col])
         top3.to_excel(OUT_XLSX.replace(".xlsx", f"_top3_{scheme_name}.xlsx"), index=False)
     df_sp.to_excel(OUT_XLSX, index=False)
     top1 = {}
     for scheme_name in CODON_BONUS_SCHEMES:
         score_col = f"tis_score_{scheme_name}"
-        idx = df_sp.groupby("accession")[score_col].idxmax()
+        idx = df_sp.groupby("peptide_id")[score_col].idxmax()
         idx = idx.dropna().astype(int)
-        tmp = df_sp.loc[idx, ["accession", "candidate_key"]].set_index("accession")["candidate_key"]
+        tmp = df_sp.loc[idx, ["peptide_id", "candidate_key"]].set_index("peptide_id")["candidate_key"]
         top1[scheme_name] = tmp
     summary = pd.DataFrame({
         "top1_weak": top1.get("weak"),

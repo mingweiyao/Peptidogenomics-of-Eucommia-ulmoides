@@ -34,17 +34,17 @@ DEFAULT_OTHER_CODON_BONUS = -3.0
 # =========================================================
 # CDS parsing
 # =========================================================
-def parse_gff_file(gff3_file):
-    has_5utr = set()
-    with open(gff3_file, "r", encoding="utf-8") as f:
-        for line in f:
-            if line.startswith("#"): continue
-            parts = line.rstrip("\n").split("\t")
-            if len(parts) < 9: continue
-            if parts[2] != "five_prime_UTR": continue
-            m = re.search(r"Parent_Accession=([^;]+)", parts[8])
-            if m: has_5utr.add(m.group(1))
-    return has_5utr
+# def parse_gff_file(gff3_file):
+#     has_5utr = set()
+#     with open(gff3_file, "r", encoding="utf-8") as f:
+#         for line in f:
+#             if line.startswith("#"): continue
+#             parts = line.rstrip("\n").split("\t")
+#             if len(parts) < 9: continue
+#             if parts[2] != "five_prime_UTR": continue
+#             m = re.search(r"Parent_Accession=([^;]+)", parts[8])
+#             if m: has_5utr.add(m.group(1))
+#     return has_5utr
 def parse_tid_details(description, cds_seq, genome_dict):
     chrom, exon_part, strand = description.split("\t")[3].split("=")[1].split(": ")
     exon_coords = [(int(s), int(e)) for s, e in (b.split("-") for b in exon_part.split(","))]
@@ -232,7 +232,8 @@ def count_kmers(seq, k):
     pat = re.compile(rf"[ACGT]{{{k}}}")
     for i in range(L - k + 1):
         s = seq[i:i+k]
-        if pat.fullmatch(s): c[s] += 1
+        if pat.fullmatch(s):
+            c[s] += 1
     return c
 _G_TP_UPS = None
 _G_K = None
@@ -269,11 +270,14 @@ def learn_tp_only_kmer_weights(tp_ups, k, n_shuffle=200, min_z=2.5, seed=7, top_
     kmers = [''.join(p) for p in __import__("itertools").product("ACGT", repeat=k)]
     k2i = {km: i for i, km in enumerate(kmers)}
     rep_seeds = [seed + 1000003 * r for r in range(n_shuffle)]
+    n_jobs = int(n_jobs)
     n_jobs = max(1, min(n_jobs, n_shuffle))
     chunksize = 1 if n_shuffle <= 400 else max(1, n_shuffle // (n_jobs * 4))
     with mp.get_context("fork").Pool(
-        processes=n_jobs, initializer=_init_worker,
-        initargs=(tp_ups, k, k2i, len(kmers))) as pool:
+        processes=n_jobs,
+        initializer=_init_worker,
+        initargs=(tp_ups, k, k2i, len(kmers)),
+    ) as pool:
         reps = pool.map(_one_shuffle_rep, rep_seeds, chunksize=chunksize)
     rep_sums = np.vstack(reps)
     exp = rep_sums.mean(axis=0)
