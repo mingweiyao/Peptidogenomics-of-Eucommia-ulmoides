@@ -307,9 +307,17 @@ def upstream_window(seq, tis_pos0):
     if s < 0 or e > len(seq) or e <= s: return None
     up = seq[s:e].upper()
     return up if len(up) == UP_LEN else None
+
+
 # =========================================================
 # Kozak PWM
 # =========================================================
+
+
+
+
+
+
 def kozak_logodds(w, pwm, bg, eps=1e-12):
     """
     log-odds: sum log( pwm(ch,i) / bg(ch) )
@@ -321,11 +329,20 @@ def kozak_logodds(w, pwm, bg, eps=1e-12):
             q = max(bg.get(ch, 0.25), eps)
             s += math.log(p / q)
     return float(s)
+
+
 def cu_fraction(up):
     return (sum(1 for ch in up if ch in "CT") / len(up)) if up else float("nan")
+
+
 # =========================================================
 # k-mer LM (TP upstream vs CDS background)
 # =========================================================
+
+
+
+
+
 def score_seq_ll(seq, lm_obj, k):
     """
     average log-likelihood of k-mers in seq
@@ -348,6 +365,11 @@ def score_seq_ll(seq, lm_obj, k):
         else:
             return float("nan")
     return float(s / denom)
+
+
+
+
+
 def motif_rate(seq, motif):
     seq = seq.upper()
     motif = motif.upper()
@@ -361,6 +383,11 @@ def motif_rate(seq, motif):
         if seq[i:i+k] == motif:
             cnt += 1
     return cnt / denom if denom > 0 else 0.0
+
+
+
+
+
 def motif_score(up, motif_weights):
     """
     S_motif(up) = sum_{m} rate(up,m) * log_ratio(m)
@@ -375,14 +402,23 @@ def motif_score(up, motif_weights):
         w = float(d["log_ratio"])
         s += motif_rate(up, m) * w
     return float(s)
+
+
+
+
+
 # =========================================================
 # Candidate scoring helpers
 # =========================================================
 def codon_bonus_by_scheme(codon, scheme_dict):
     c = str(codon).upper()
     return float(scheme_dict.get(c, DEFAULT_OTHER_CODON_BONUS))
+
+
 def make_candidate_key(row):
     return f'{row["chrom"]}|{row["strand"]}|{int(row["phy_start"])}|{int(row["phy_end"])}|{str(row["codon"]).upper()}'
+
+
 # =========================================================
 # Main scoring pipeline
 # =========================================================

@@ -1,20 +1,20 @@
-import os, re, json, random, math
+import os, re, random, math,json
 from Bio import SeqIO
+import pandas as pd
 from Bio.Seq import Seq
 from collections import Counter
 import numpy as np
-import pandas as pd
 from sklearn.linear_model import LogisticRegression
 
 # =========================================================
 # CONFIG
 # =========================================================
-INPUT_DIR = "/data/Eu/Eu_genome"
-CDS_FA = os.path.join(INPUT_DIR, "GWHBISF00000000.CDS.fasta")
-GENOME_FA = os.path.join(INPUT_DIR, "GWHBISF00000000.genome.fasta")
+INPUT_DIR = "/media/wanglab/caca/work_mechanism/mer"
+CDS_FA = os.path.join(INPUT_DIR, "Eu_CDS.fasta")
+GENOME_FA = os.path.join(INPUT_DIR, "Eu_genome.fasta")
 CANDIDATES_XLSX = os.path.join(INPUT_DIR, "output_candidates.xlsx")
 GFF3_FA = os.path.join(INPUT_DIR, "GWHBISF00000000.gff")
-OUT_DIR = os.path.join(INPUT_DIR, "codon_prediction")
+OUT_DIR = os.path.join(INPUT_DIR, "codon_prediction_v2")
 OUT_XLSX = os.path.join(OUT_DIR, "candidates_scored.xlsx")
 SHEET_NAME = "output_candidates"
 
@@ -23,22 +23,17 @@ UP_LEN = 100
 UP_START = 100
 UP_END = 0
 
-# k-mer LM settings
-LM_KS = (3, 5)
-LM_ALPHA = 1.0  # Laplace smoothing
-LM_LOG_BASE = math.e
-
-# TN sampling (for LR training only)
+# TN sampling (只用于 LR 学权重；你仍可用 multi-seed 来弱化抽样偶然性)
 TN_PER_TX = 5
 MIN_INTERNAL_NT = 30
 TN_SEEDS = range(1, 11)
 DEDUP_TN = True
+KMER = (3, 5)
 
 # Motifs of interest (RNA -> DNA)
 # UUC UCU UCC UCUUC UCUCU -> TTC TCT TCC TCTTC TCTCT
 MOTIFS_DNA = ["TTC", "TCT", "TCC", "TCTTC", "TCTCT"]
 MOTIF_EPS = 1e-9
-
 CODON_BONUS_SCHEMES = {
     "weak":   {"ATG": 0.0, "CTG": -0.1, "GTG": -0.2, "TTG": -0.2, "ACG": -0.3},
     "medium": {"ATG": 0.0, "CTG": -0.5, "GTG": -1.0, "TTG": -1.0, "ACG": -2.0},
@@ -112,94 +107,41 @@ def count_kmers(seq, k):
         km = seq[i:i+k]
         if all(ch in "ACGT" for ch in km): c[km] += 1
     return c
-def build_upstream_kmer_lm(ups, k, alpha=1.0):
-    obs = Counter()
-    total = 0
-    for s in ups:
-        cnt = count_kmers(s, k)
-        obs.update(cnt)
-        total += max(0, len(s) - k + 1)
-    V = 4 ** k
-    denom = total + alpha * V
-    default_p = alpha / denom
-    default_logp = math.log(default_p)
-    logp = {km: math.log((c + alpha) / denom) for km, c in obs.items()}
-    return {
-        "params": {"k": k, "alpha": alpha, "total_windows": len(ups),
-                   "total_kmer_positions": total, "V": V},
-        "logp": logp,
-        "default_logp": float(default_logp),
-    }
-def build_cds_background_lm(cds_dict, k, alpha=1.0):
-    obs = Counter()
-    total = 0
-    for tid, seq in cds_dict.items():
-        cds = seq[UP_START:]
-        if not DNA_RE.fullmatch(cds):
-            L = len(cds)
-            for i in range(L-k+1):
-                km = cds[i:i+k]
-                if all(ch in "ACGT" for ch in km):
-                    obs[km] += 1
-                    total += 1
-            continue
-        cnt = count_kmers(cds, k)
-        obs.update(cnt)
-        total += max(0, len(cds) - k + 1)
-    V = 4 ** k
-    denom = total + alpha * V
-    default_p = alpha / denom
-    default_logp = math.log(default_p)
-    logp = {km: math.log((c + alpha) / denom) for km, c in obs.items()}
-    return {
-        "params": {"k": k, "alpha": alpha, "total_cds_nt": None,
-                   "total_kmer_positions": total, "V": V},
-        "logp": logp,
-        "default_logp": float(default_logp),
-    }
-# =========================================================
-# Motif weights (TP vs CDS background)
-# =========================================================
-def lm_prob(lm_obj, kmer):
-    lp = lm_obj["logp"].get(kmer, lm_obj["default_logp"])
-    return math.exp(lp)
-def compute_motif_weights(lm_tp3, lm_tp5, lm_tn3, lm_tn5, motifs=MOTIFS_DNA, eps=MOTIF_EPS):
-    weights = {}
-    for m in motifs:
-        k = len(m)
-        if k==3:
-            p_tp = lm_prob(lm_tp3, m)
-            p_tn = lm_prob(lm_tn3, m)
-        elif k == 5:
-            p_tp = lm_prob(lm_tp5, m)
-            p_tn = lm_prob(lm_tn5, m)
-        else:
-            raise ValueError(f"Unsupported motif length: {m}")
-        w = math.log((p_tp + eps) / (p_tn + eps))
-        weights[m] = {
-            "p_tp": float(p_tp),
-            "p_bg": float(p_tn),
-            "log_ratio": float(w),
+def upstream_window(seq, tis_pos0):
+    s = tis_pos0 - UP_START
+    e = tis_pos0 - UP_END
+    if s < 0 or e > len(seq) or e <= s: return None
+    up = seq[s:e].upper()
+    return up if len(up) == UP_LEN else None
+def build_motif(tp_df, kmer = KMER, alpha=1.0):
+    out = {}
+    for k in kmer:
+        obs = Counter()
+        total = 0
+        for _, r in tp_df.iterrows():
+            s = r["seq"]
+            up = upstream_window(s, int(r["tis_pos"]))
+            if up is None: continue
+            cnt = count_kmers(up, k)
+            obs.update(cnt)
+            total += max(0, len(up) - k + 1)
+        V = 4 ** k
+        denom = total + alpha * V
+        default_p = alpha / denom
+        default_logp = math.log(default_p)
+        logp = {km: math.log((c + alpha) / denom) for km, c in obs.items()}
+        out[k] = {
+            "params": {"k": k, "alpha": alpha, "total_windows": int(tp_df.shape[0]), "total_kmer_positions": int(total), "V": V},
+            "logp": logp,
+            "default_logp": float(default_logp),
         }
-    return weights            
-# =========================================================
-# Training (PWM + LR)
-# =========================================================
-def build_pwm(tp_windows, pseudocount=1.0):
-    if not tp_windows: raise ValueError("TP kozak windows 为空，无法建 PWM")
-    counts = {b: np.full(13, pseudocount, dtype=float) for b in "ACGT"}
-    for w in tp_windows:
-        if len(w) != 13: continue
-        for i, ch in enumerate(w):
-            if ch in counts: counts[ch][i] += 1.0
-    totals = sum(counts[b] for b in "ACGT")
-    return {b: (counts[b] / totals).tolist() for b in "ACGT"}
-def kozak_window(seq, tis_pos):
-    s = tis_pos - 6
-    e = tis_pos + 7
-    if s < 0 or e > len(seq): return None
-    w = seq[s:e].upper()
-    return w if len(w) == 13 else None
+    return out
+def train_tp_tn_lm(df):
+    lm_tp = build_motif(df[df["label"]==1], KMER)
+    tp_lm3, tp_lm5 = lm_tp[3], lm_tp[5]
+    lm_tn = build_motif(df[df["label"]==0], KMER)
+    tn_lm3, tn_lm5 = lm_tn[3], lm_tn[5]
+    return tp_lm3, tp_lm5, tn_lm3, tn_lm5
 def sample_tp_tn_multi_seed(cds_dict, tn_per_tx=TN_PER_TX, min_internal_nt=MIN_INTERNAL_NT, seeds=TN_SEEDS, dedup_tn=DEDUP_TN):
     rows_tp = []
     for tid, seq in cds_dict.items():
@@ -226,8 +168,93 @@ def sample_tp_tn_multi_seed(cds_dict, tn_per_tx=TN_PER_TX, min_internal_nt=MIN_I
                     tn_set.add(key)
                 rows_tn.append((tid, i, seq, 0))
     return pd.DataFrame(rows_tp + rows_tn, columns=["tid", "tis_pos", "seq", "label"])
-def train_pwm_and_lr(cds_dict, genome_bg, lm_tp3, lm_tp5, lm_tn3, lm_tn5, motif_weights):
-    df = sample_tp_tn_multi_seed(cds_dict)
+# =========================================================
+# Motif weights (TP vs CDS background)
+# =========================================================
+def lm_prob(lm_obj, kmer):
+    lp = lm_obj["logp"].get(kmer, lm_obj["default_logp"])
+    return math.exp(lp)
+def compute_motif_weights(lm_tp3, lm_tp5, lm_tn3, lm_tn5, motifs=MOTIFS_DNA, eps=MOTIF_EPS):
+    weights = {}
+    for m in motifs:
+        k = len(m)
+        if k==3:
+            p_tp = lm_prob(lm_tp3, m)
+            p_tn = lm_prob(lm_tn3, m)
+        elif k == 5:
+            p_tp = lm_prob(lm_tp5, m)
+            p_tn = lm_prob(lm_tn5, m)
+        else:
+            raise ValueError(f"Unsupported motif length: {m}")
+        w = math.log((p_tp + eps) / (p_tn + eps))
+        weights[m] = {
+            "p_tp": float(p_tp),
+            "p_bg": float(p_tn),
+            "log_ratio": float(w),
+        }
+    return weights  
+# =========================================================
+# Training (PWM + LR)
+# =========================================================
+def kozak_window(seq, tis_pos):
+    s = tis_pos - 6
+    e = tis_pos + 7
+    if s < 0 or e > len(seq): return None
+    w = seq[s:e].upper()
+    return w if len(w) == 13 else None
+def build_pwm(tp_windows, pseudocount=1.0):
+    if not tp_windows: raise ValueError("TP kozak windows 为空，无法建 PWM")
+    counts = {b: np.full(13, pseudocount, dtype=float) for b in "ACGT"}
+    for w in tp_windows:
+        if len(w) != 13: continue
+        for i, ch in enumerate(w):
+            if ch in counts: counts[ch][i] += 1.0
+    totals = sum(counts[b] for b in "ACGT")
+    return {b: (counts[b] / totals).tolist() for b in "ACGT"}
+def kozak_logodds(w, pwm, bg, eps=1e-12):
+    s = 0.0
+    for i, ch in enumerate(w):
+        if ch in "ACGT":
+            p = max(pwm[ch][i], eps)
+            q = max(bg.get(ch, 0.25), eps)
+            s += math.log(p / q)
+    return float(s)
+def cu_fraction(up):
+    return (sum(1 for ch in up if ch in "CT") / len(up)) if up else float("nan")
+def score_seq_ll(seq, lm_obj, k):
+    if seq is None or len(seq) < k: return float("nan")
+    seq = seq.upper()
+    L = len(seq)
+    denom = (L - k + 1)
+    if denom <= 0: return float("nan")
+    logp = lm_obj["logp"]
+    dlog = lm_obj["default_logp"]
+    s = 0.0
+    for i in range(denom):
+        km = seq[i:i+k]
+        if all(ch in "ACGT" for ch in km): s += logp.get(km, dlog)
+        else: return float("nan")
+    return float(s / denom)
+def motif_score(up, motif_weights):
+    if up is None: return float("nan")
+    up = up.upper()
+    if not DNA_RE.fullmatch(up): return float("nan")
+    s = 0.0
+    for m, d in motif_weights.items():
+        w = float(d["log_ratio"])
+        s += motif_rate(up, m) * w
+    return float(s)
+def motif_rate(seq, motif):
+    L = len(seq)
+    k = len(motif)
+    if L < k: return 0.0
+    denom = L - k + 1
+    cnt = 0
+    for i in range(denom):
+        if seq[i:i+k] == motif:
+            cnt += 1
+    return cnt / denom if denom > 0 else 0.0
+def train_pwm_and_lr(df, genome_bg, lm_tp3, lm_tp5, lm_tn3, lm_tn5, motif_weights):
     # 1) PWM from TP windows
     tp_ws = []
     for _, r in df[df["label"] == 1].iterrows():
@@ -235,8 +262,7 @@ def train_pwm_and_lr(cds_dict, genome_bg, lm_tp3, lm_tp5, lm_tn3, lm_tn5, motif_
         if w is not None and DNA_RE.fullmatch(w): tp_ws.append(w)
     pwm = build_pwm(tp_ws)
     # 2) Features
-    X = []
-    y = []
+    X = []; y = []
     for _, r in df.iterrows():
         seq = r["seq"].upper()
         tis = int(r["tis_pos"])
@@ -245,37 +271,27 @@ def train_pwm_and_lr(cds_dict, genome_bg, lm_tp3, lm_tp5, lm_tn3, lm_tn5, motif_
         if w is None or up is None: continue
         if not DNA_RE.fullmatch(w): continue
         if not DNA_RE_100.fullmatch(up): continue
-
         kz = kozak_logodds(w, pwm, genome_bg)
         cu = cu_fraction(up)
-
         ll_tp3 = score_seq_ll(up, lm_tp3, 3)
         ll_tp5 = score_seq_ll(up, lm_tp5, 5)
-        ll_bg3 = score_seq_ll(up, lm_bg3, 3)
-        ll_bg5 = score_seq_ll(up, lm_bg5, 5)
-
+        ll_bg3 = score_seq_ll(up, lm_tn3, 3)
+        ll_bg5 = score_seq_ll(up, lm_tn5, 5)
         llr3 = ll_tp3 - ll_bg3
         llr5 = ll_tp5 - ll_bg5
-
         ms = motif_score(up, motif_weights)
-
-        if any(np.isnan(v) for v in [kz, cu, llr3, llr5, ms]):
-            continue
-
+        if any(np.isnan(v) for v in [kz, cu, llr3, llr5, ms]): continue
         X.append([kz, cu, llr3, llr5, ms])
         y.append(int(r["label"]))
-
     X = np.asarray(X, float)
     y = np.asarray(y, int)
     if X.shape[0] < 50:
         raise ValueError(f"训练样本过少：{X.shape[0]}")
-
     # standardize
     mu = X.mean(axis=0)
     sd = X.std(axis=0)
     sd[sd == 0] = 1.0
     Z = (X - mu) / sd
-
     lr = LogisticRegression(
         penalty="l2",
         solver="liblinear",
@@ -283,7 +299,6 @@ def train_pwm_and_lr(cds_dict, genome_bg, lm_tp3, lm_tp5, lm_tn3, lm_tn5, motif_
         class_weight="balanced",
     )
     lr.fit(Z, y)
-
     weights = {
         "beta0": float(lr.intercept_[0]),
         "w1": float(lr.coef_[0][0]),  # kozak_logodds
@@ -298,83 +313,6 @@ def train_pwm_and_lr(cds_dict, genome_bg, lm_tp3, lm_tp5, lm_tn3, lm_tn5, motif_
         "feat": ["kozak_logodds", "cu_fraction", "llr3", "llr5", "motif_score"],
     }
     return pwm, weights, std
-# =========================================================
-# Windows / sampling
-# =========================================================
-def upstream_window(seq, tis_pos0):
-    s = tis_pos0 - UP_START
-    e = tis_pos0 - UP_END
-    if s < 0 or e > len(seq) or e <= s: return None
-    up = seq[s:e].upper()
-    return up if len(up) == UP_LEN else None
-# =========================================================
-# Kozak PWM
-# =========================================================
-def kozak_logodds(w, pwm, bg, eps=1e-12):
-    """
-    log-odds: sum log( pwm(ch,i) / bg(ch) )
-    """
-    s = 0.0
-    for i, ch in enumerate(w):
-        if ch in "ACGT":
-            p = max(pwm[ch][i], eps)
-            q = max(bg.get(ch, 0.25), eps)
-            s += math.log(p / q)
-    return float(s)
-def cu_fraction(up):
-    return (sum(1 for ch in up if ch in "CT") / len(up)) if up else float("nan")
-# =========================================================
-# k-mer LM (TP upstream vs CDS background)
-# =========================================================
-def score_seq_ll(seq, lm_obj, k):
-    """
-    average log-likelihood of k-mers in seq
-    """
-    if seq is None or len(seq) < k:
-        return float("nan")
-    seq = seq.upper()
-    L = len(seq)
-    denom = (L - k + 1)
-    if denom <= 0:
-        return float("nan")
-
-    logp = lm_obj["logp"]
-    dlog = lm_obj["default_logp"]
-    s = 0.0
-    for i in range(denom):
-        km = seq[i:i+k]
-        if all(ch in "ACGT" for ch in km):
-            s += logp.get(km, dlog)
-        else:
-            return float("nan")
-    return float(s / denom)
-def motif_rate(seq, motif):
-    seq = seq.upper()
-    motif = motif.upper()
-    L = len(seq)
-    k = len(motif)
-    if L < k:
-        return 0.0
-    denom = L - k + 1
-    cnt = 0
-    for i in range(denom):
-        if seq[i:i+k] == motif:
-            cnt += 1
-    return cnt / denom if denom > 0 else 0.0
-def motif_score(up, motif_weights):
-    """
-    S_motif(up) = sum_{m} rate(up,m) * log_ratio(m)
-    """
-    if up is None:
-        return float("nan")
-    up = up.upper()
-    if not DNA_RE.fullmatch(up):
-        return float("nan")
-    s = 0.0
-    for m, d in motif_weights.items():
-        w = float(d["log_ratio"])
-        s += motif_rate(up, m) * w
-    return float(s)
 # =========================================================
 # Candidate scoring helpers
 # =========================================================
@@ -392,54 +330,32 @@ def score_candidates_excel(require_5utr=False):
     genome_dict = {rec.id: str(rec.seq).upper() for rec in SeqIO.parse(GENOME_FA, "fasta")}
     genome_bg = compute_genome_bg(genome_dict)
     cds_dict = load_cds_fasta(CDS_FA, GFF3_FA, genome_dict, require_5utr=require_5utr)
-    # ---- 1) Collect TP upstream windows ----
-    tp_ups = []
-    for tid, seq in cds_dict.items():
-        seq = seq.upper()
-        if seq[UP_START:UP_START+3] != "ATG": continue
-        up = upstream_window(seq, UP_START)
-        if up is not None and DNA_RE_100.fullmatch(up): tp_ups.append(up)
-    if len(tp_ups) < 50: raise ValueError(f"TP upstream windows 太少（{len(tp_ups)}），无法建 TP LM")
-    # ---- 2) Train TP LM + BG LM (3mer/5mer) ----
-    lm_tp3, lm_tp5, lm_tn3, lm_tn5, tp_ups = build_upstream_kmer_lm(cds_dict, k=3, alpha=LM_ALPHA)
-    # ---- 3) Compute motif weights (TP vs CDS background) ----
+    # ---- 1) Train TP LM + BG LM (3mer/5mer) ----
+    df = sample_tp_tn_multi_seed(cds_dict)
+    lm_tp3, lm_tp5, lm_tn3, lm_tn5 = train_tp_tn_lm(df)
+    # ---- 2) Compute motif weights (TP vs CDS background) ----
     motif_weights = compute_motif_weights(lm_tp3, lm_tp5, lm_tn3, lm_tn5, motif=MOTIFS_DNA)
-    # ---- 5) Train PWM + LR weights ----
-    pwm, weights, std = train_pwm_and_lr(cds_dict, genome_bg, lm_tp3, lm_tp5, lm_tn3, lm_tn5, motif_weights)
-
-    # ---- 6) Read candidates ----
+    # ---- 3) Train PWM + LR weights ----
+    pwm, weights, std = train_pwm_and_lr(df, genome_bg, lm_tp3, lm_tp5, lm_tn3, lm_tn5, motif_weights)
+    # ---- 4) Read candidates ----
     df_sp = pd.read_excel(CANDIDATES_XLSX, sheet_name=SHEET_NAME)
-
     mu = np.array(std["mu"], float)
     sd = np.array(std["sd"], float)
-
     candidate_keys = []
     kozak_scores = []
     cu_fracs = []
     llr3_scores = []
     llr5_scores = []
     motif_scores = []
-    tis_scores = {name: [] for name in CODON_BONUS_SCHEMES}
-
+    tis_scores = {name: [] for name in CODON_BONUS_SCHEMES}  
     for _, r in df_sp.iterrows():
         chrom = str(r.get("chrom", ""))
         strand = str(r.get("strand", ""))
         start = int(r.get("phy_start", -1))
         end = int(r.get("phy_end", -1))
         codon = str(r.get("codon", "")).upper()
-
         candidate_keys.append(make_candidate_key(r))
-
-        if chrom not in genome_dict:
-            kozak_scores.append(np.nan); cu_fracs.append(np.nan)
-            llr3_scores.append(np.nan); llr5_scores.append(np.nan); motif_scores.append(np.nan)
-            for name in CODON_BONUS_SCHEMES:
-                tis_scores[name].append(np.nan)
-            continue
-
         g = genome_dict[chrom]
-
-        # kozak window from sheet (13nt string)
         w = str(r.get("kozak", "")).upper()[:13]
         if len(w) != 13 or (not DNA_RE.fullmatch(w)):
             kozak_scores.append(np.nan); cu_fracs.append(np.nan)
@@ -447,8 +363,6 @@ def score_candidates_excel(require_5utr=False):
             for name in CODON_BONUS_SCHEMES:
                 tis_scores[name].append(np.nan)
             continue
-
-        # upstream 100nt: [-100, 0)
         if strand == "+":
             left = start - (UP_START + 1)
             right = start - 1
@@ -457,29 +371,22 @@ def score_candidates_excel(require_5utr=False):
             left = end
             right = end + UP_START
             up = str(Seq(g[left:right]).reverse_complement()) if (left >= 0 and right <= len(g)) else None
-
         if up is None or len(up) != UP_LEN or (not DNA_RE_100.fullmatch(up)):
             kozak_scores.append(np.nan); cu_fracs.append(np.nan)
             llr3_scores.append(np.nan); llr5_scores.append(np.nan); motif_scores.append(np.nan)
             for name in CODON_BONUS_SCHEMES:
                 tis_scores[name].append(np.nan)
             continue
-
         kz = kozak_logodds(w, pwm, genome_bg)
         cu = cu_fraction(up)
-
         ll_tp3 = score_seq_ll(up, lm_tp3, 3)
         ll_tp5 = score_seq_ll(up, lm_tp5, 5)
-        ll_bg3 = score_seq_ll(up, lm_bg3, 3)
-        ll_bg5 = score_seq_ll(up, lm_bg5, 5)
-
+        ll_bg3 = score_seq_ll(up, lm_tn3, 3)
+        ll_bg5 = score_seq_ll(up, lm_tn5, 5)
         llr3 = ll_tp3 - ll_bg3
         llr5 = ll_tp5 - ll_bg5
-
         ms = motif_score(up, motif_weights)
-
         z = (np.array([kz, cu, llr3, llr5, ms], float) - mu) / sd
-
         score_base = (
             weights["beta0"]
             + weights["w1"] * z[0]
@@ -488,35 +395,28 @@ def score_candidates_excel(require_5utr=False):
             + weights["w4"] * z[3]
             + weights["w5"] * z[4]
         )
-
         kozak_scores.append(kz)
         cu_fracs.append(cu)
         llr3_scores.append(llr3)
         llr5_scores.append(llr5)
         motif_scores.append(ms)
-
         for scheme_name, scheme_dict in CODON_BONUS_SCHEMES.items():
             tis_scores[scheme_name].append(score_base + codon_bonus_by_scheme(codon, scheme_dict))
-
-    # ---- 7) write outputs ----
+    # ---- 5) write outputs ----
     df_sp["candidate_key"] = candidate_keys
     df_sp["kozak_score"] = kozak_scores
     df_sp["cu_fraction"] = cu_fracs
     df_sp["llr3"] = llr3_scores
     df_sp["llr5"] = llr5_scores
     df_sp["motif_score"] = motif_scores
-
     for scheme_name in CODON_BONUS_SCHEMES:
         score_col = f"tis_score_{scheme_name}"
         rank_col = f"rank_{scheme_name}"
         df_sp[score_col] = tis_scores[scheme_name]
         df_sp[rank_col] = df_sp.groupby("accession")[score_col].rank(ascending=False, method="first")
-
         top3 = df_sp[df_sp[rank_col] <= 3].sort_values(["accession", rank_col])
         top3.to_excel(OUT_XLSX.replace(".xlsx", f"_top3_{scheme_name}.xlsx"), index=False)
-
     df_sp.to_excel(OUT_XLSX, index=False)
-
     # sensitivity summary
     top1 = {}
     for scheme_name in CODON_BONUS_SCHEMES:
@@ -525,7 +425,6 @@ def score_candidates_excel(require_5utr=False):
         idx = idx.dropna().astype(int)
         tmp = df_sp.loc[idx, ["accession", "candidate_key"]].set_index("accession")["candidate_key"]
         top1[scheme_name] = tmp
-
     summary = pd.DataFrame({
         "top1_weak": top1.get("weak"),
         "top1_medium": top1.get("medium"),
@@ -534,35 +433,26 @@ def score_candidates_excel(require_5utr=False):
     summary["stable_top1"] = (summary["top1_weak"] == summary["top1_medium"]) & (summary["top1_medium"] == summary["top1_strong"])
     summary = summary.reset_index()
     summary.to_excel(OUT_XLSX.replace(".xlsx", "_sensitivity_summary.xlsx"), index=False)
-
     # ---- 8) save model artifacts ----
     with open(os.path.join(OUT_DIR, "genome_bg.json"), "w", encoding="utf-8") as f:
         json.dump(genome_bg, f, indent=2)
-
     with open(os.path.join(OUT_DIR, "pwm.json"), "w", encoding="utf-8") as f:
         json.dump(pwm, f, indent=2)
-
     with open(os.path.join(OUT_DIR, "weights.json"), "w", encoding="utf-8") as f:
         json.dump(weights, f, indent=2)
-
     with open(os.path.join(OUT_DIR, "standardizer.json"), "w", encoding="utf-8") as f:
         json.dump(std, f, indent=2)
-
     with open(os.path.join(OUT_DIR, "lm_tp_3.json"), "w", encoding="utf-8") as f:
         json.dump(lm_tp3, f, indent=2)
     with open(os.path.join(OUT_DIR, "lm_tp_5.json"), "w", encoding="utf-8") as f:
         json.dump(lm_tp5, f, indent=2)
     with open(os.path.join(OUT_DIR, "lm_bg_3.json"), "w", encoding="utf-8") as f:
-        json.dump(lm_bg3, f, indent=2)
+        json.dump(lm_tn3, f, indent=2)
     with open(os.path.join(OUT_DIR, "lm_bg_5.json"), "w", encoding="utf-8") as f:
-        json.dump(lm_bg5, f, indent=2)
-
+        json.dump(lm_tn5, f, indent=2)
     with open(os.path.join(OUT_DIR, "motif_weights.json"), "w", encoding="utf-8") as f:
         json.dump(motif_weights, f, indent=2)
-
     print("[OK] wrote:", OUT_XLSX)
     print("[OK] artifacts in:", OUT_DIR)
-
-
 if __name__ == "__main__":
     score_candidates_excel(require_5utr=False)
