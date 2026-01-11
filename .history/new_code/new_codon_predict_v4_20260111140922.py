@@ -1,11 +1,11 @@
-import os, re, random, math,json
+import os, re, math, json
 from Bio import SeqIO
-import pandas as pd
 from Bio.Seq import Seq
+import pandas as pd
 from collections import Counter
+from itertools import product
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from itertools import product
 
 # =========================================================
 # CONFIG
@@ -18,45 +18,41 @@ GFF3_FA = os.path.join(INPUT_DIR, "GWHBISF00000000.gff")
 OUT_DIR = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v3"
 OUT_XLSX = os.path.join(OUT_DIR, "candidates_scored.xlsx")
 SHEET_NAME = "output_candidates"
-
 # upstream window: [-100, 0) relative to codon first base (tis_pos0)
 UP_LEN = 100
 UP_START = 100
 UP_END = 0
 
-# TN sampling (只用于 LR 学权重；你仍可用 multi-seed 来弱化抽样偶然性)
-# TN_PER_TX = 5
 MIN_INTERNAL_NT = 30
-# TN_SEEDS = range(1, 11)
-# DEDUP_TN = True
-KMER = (3, 5)
-
-# Motifs of interest (RNA -> DNA)
-# UUC UCU UCC UCUUC UCUCU -> TTC TCT TCC TCTTC TCTCT
-MOTIFS_DNA = ["TTC", "TCT", "CTC", "TCTTC", "TCTCT"]
-MOTIF_EPS = 1e-9
-CODON_BONUS_SCHEMES = {
-    "weak":   {"ATG": 0.0, "CTG": -0.1, "GTG": -0.2, "TTG": -0.2, "ACG": -0.3},
-    "medium": {"ATG": 0.0, "CTG": -0.5, "GTG": -1.0, "TTG": -1.0, "ACG": -2.0},
-    "strong": {"ATG": 0.0, "CTG": -1.0, "GTG": -2.0, "TTG": -2.0, "ACG": -3.0},
-}
-DEFAULT_OTHER_CODON_BONUS = -3.0
-
 DNA_RE_100 = re.compile(r"^[ACGT]{100}$")
 DNA_RE = re.compile(r"^[ACGT]+$")
+KMER = (3, 5)
 
-# =========================================================
-# Genome background (A/C/G/T)
-# =========================================================
-# def compute_genome_bg(genome_dict):
-#     c = Counter()
-#     for chrom, seq in genome_dict.items():
-#         seq = seq.upper()
-#         for ch in seq:
-#             if ch in "ACGT":
-#                 c[ch] += 1
-#     tot = sum(c[b] for b in "ACGT")
-#     return {b: (c[b] / tot) for b in "ACGT"}
+MOTIFS_DNA = ["TTC", "TCT", "CTC", "TCTTC", "TCTCT"]
+MOTIF_EPS = 1e-9
+
+E_MAX = {
+    "ATG": 100.0,
+    "CTG": 50.0,
+    "ACG": 40.0,
+    "GTG": 20.0,
+    "TTG": 10.0,
+    "ATA":  5.0,
+    "ATT":  5.0,
+    "ATC":  5.0,
+    # others: very weak
+}
+DEFAULT_E_MAX = 2.0  # for other codons (very weak prior)
+P4_G_FOLD = {
+    "CTG": 10.0,  # ~10x
+    "ACG":  7.0,  # ~7x
+    "GTG":  5.0,  # ~5x
+    "TTG":  2.0,  # optional/weak; paper less explicit, keep conservative
+    "ATA":  2.0,  # AUx ~2x
+    "ATT":  2.0,
+    "ATC":  2.0,
+}
+
 # =========================================================
 # CDS parsing
 # =========================================================
@@ -97,6 +93,20 @@ def load_cds_fasta(cds_file, gff3_file, genome_dict, require_5utr=False):
         if merged is None: continue
         cds_dict[tid] = merged
     return cds_dict
+# =========================================================
+# Building TP/TN
+# =========================================================
+def sample_tp_tn_all_internal_atg(cds_dict, min_internal_nt=MIN_INTERNAL_NT):
+    rows_tp = []
+    rows_tn = []
+    for tid, seq in cds_dict.items():
+        seq = seq.upper()
+        if seq[UP_START:UP_START+3] != "ATG": continue
+        rows_tp.append((tid, UP_START, seq, 1))
+        for i in range(UP_START + 3, len(seq) - 2, 3):
+            if (i - UP_START) < min_internal_nt: continue
+            if seq[i:i+3] == "ATG": rows_tn.append((tid, i, seq, 0))
+    return pd.DataFrame(rows_tp + rows_tn, columns=["tid", "tis_pos", "seq", "label"])
 # =========================================================
 # k-mer LM
 # =========================================================
@@ -148,20 +158,6 @@ def train_tp_tn_lm(df):
     lm_tn = build_motif(df[df["label"]==0], KMER)
     tn_lm3, tn_lm5 = lm_tn[3], lm_tn[5]
     return tp_lm3, tp_lm5, tn_lm3, tn_lm5
-# =========================================================
-# Building TP/TN
-# =========================================================
-def sample_tp_tn_all_internal_atg(cds_dict, min_internal_nt=MIN_INTERNAL_NT):
-    rows_tp = []
-    rows_tn = []
-    for tid, seq in cds_dict.items():
-        seq = seq.upper()
-        if seq[UP_START:UP_START+3] != "ATG": continue
-        rows_tp.append((tid, UP_START, seq, 1))
-        for i in range(UP_START + 3, len(seq) - 2, 3):
-            if (i - UP_START) < min_internal_nt: continue
-            if seq[i:i+3] == "ATG": rows_tn.append((tid, i, seq, 0))
-    return pd.DataFrame(rows_tp + rows_tn, columns=["tid", "tis_pos", "seq", "label"])
 # =========================================================
 # Motif weights (TP vs CDS background)
 # =========================================================
@@ -306,14 +302,21 @@ def train_pwm_and_lr(df, motif_weights):
 # =========================================================
 # Candidate scoring helpers
 # =========================================================
-def codon_bonus_by_scheme(codon, scheme_dict):
-    c = str(codon).upper()
-    return float(scheme_dict.get(c, DEFAULT_OTHER_CODON_BONUS))
 def make_candidate_key(row):
     return f'{row["chrom"]}|{row["strand"]}|{int(row["phy_start"])}|{int(row["phy_end"])}|{str(row["codon"]).upper()}'
-# =========================================================
-# Main scoring pipeline
-# =========================================================
+def sinit_from_codon_context(codon, kozak):
+    c = (codon).upper()
+    w = (kozak).upper()
+    if len(c) != 3 or any(ch not in "ACGT" for ch in c): return float("nan")
+    if len(w) != 13 or any(ch not in "ACGT" for ch in w): return float("nan")
+    base_p4 = w[-1]
+    e = E_MAX.get(c, DEFAULT_E_MAX)
+    s_base = math.log(e / E_MAX["ATG"])
+    s_inter = 0.0
+    if base_p4 == "G":
+        fold = P4_G_FOLD.get(c, 1.0)
+        s_inter = math.log(fold) if fold > 0 else 0.0
+    return float(s_base + s_inter)
 def write_lm_tsv(lm_obj, out_tsv):
     rows = []
     for kmer, logp in lm_obj["logp"].items():
@@ -345,7 +348,7 @@ def score_candidates_excel(require_5utr=False):
     kozak_scores = []
     cu_fracs = []
     motif_scores = []
-    tis_scores = {name: [] for name in CODON_BONUS_SCHEMES}  
+    tis_scores = []
     for _, r in df_sp.iterrows():
         chrom = str(r.get("chrom", ""))
         strand = str(r.get("strand", ""))
@@ -357,9 +360,7 @@ def score_candidates_excel(require_5utr=False):
         w = str(r.get("kozak_seq", "")).upper()[:13]
         if len(w) != 13 or (not DNA_RE.fullmatch(w)):
             kozak_scores.append(np.nan); cu_fracs.append(np.nan)
-            motif_scores.append(np.nan)
-            for name in CODON_BONUS_SCHEMES:
-                tis_scores[name].append(np.nan)
+            motif_scores.append(np.nan); tis_scores.append(np.nan)
             continue
         if strand == "+":
             left = start - (UP_START + 1)
@@ -371,18 +372,10 @@ def score_candidates_excel(require_5utr=False):
             up = str(Seq(g[left:right]).reverse_complement()) if (left >= 0 and right <= len(g)) else None
         if up is None or len(up) != UP_LEN or (not DNA_RE_100.fullmatch(up)):
             kozak_scores.append(np.nan); cu_fracs.append(np.nan)
-            motif_scores.append(np.nan)
-            for name in CODON_BONUS_SCHEMES:
-                tis_scores[name].append(np.nan)
+            motif_scores.append(np.nan); tis_scores.append(np.nan)
             continue
         kz = kozak_logodds(w, pwm_tp, pwm_tn)
         cu = cu_fraction(up)
-        # ll_tp3 = score_seq_ll(up, lm_tp3, 3)
-        # ll_tp5 = score_seq_ll(up, lm_tp5, 5)
-        # ll_bg3 = score_seq_ll(up, lm_tn3, 3)
-        # ll_bg5 = score_seq_ll(up, lm_tn5, 5)
-        # llr3 = ll_tp3 - ll_bg3
-        # llr5 = ll_tp5 - ll_bg5
         ms = motif_score(up, motif_weights)
         z = (np.array([kz, cu, ms], float) - mu) / sd
         score_base = (
@@ -394,38 +387,16 @@ def score_candidates_excel(require_5utr=False):
         kozak_scores.append(kz)
         cu_fracs.append(cu)
         motif_scores.append(ms)
-        for scheme_name, scheme_dict in CODON_BONUS_SCHEMES.items():
-            tis_scores[scheme_name].append(score_base + codon_bonus_by_scheme(codon, scheme_dict))
-    # ---- 5) write outputs ----
+        # codon and background
+        codon_score = sinit_from_codon_context(codon, w)
+        tis_scores.append(score_base + codon_score)
     df_sp["candidate_key"] = candidate_keys
     df_sp["kozak_score"] = kozak_scores
     df_sp["cu_fraction"] = cu_fracs
     df_sp["motif_score"] = motif_scores
-    for scheme_name in CODON_BONUS_SCHEMES:
-        score_col = f"tis_score_{scheme_name}"
-        rank_col = f"rank_{scheme_name}"
-        df_sp[score_col] = tis_scores[scheme_name]
-        df_sp[rank_col] = df_sp.groupby("accession")[score_col].rank(ascending=False, method="first")
-        top3 = df_sp[df_sp[rank_col] <= 3].sort_values(["accession", rank_col])
-        top3.to_excel(OUT_XLSX.replace(".xlsx", f"_top3_{scheme_name}.xlsx"), index=False)
+    df_sp['tis_scores'] = tis_scores
     df_sp.to_excel(OUT_XLSX, index=False)
-    # sensitivity summary
-    top1 = {}
-    for scheme_name in CODON_BONUS_SCHEMES:
-        score_col = f"tis_score_{scheme_name}"
-        idx = df_sp.groupby("accession")[score_col].idxmax()
-        idx = idx.dropna().astype(int)
-        tmp = df_sp.loc[idx, ["accession", "candidate_key"]].set_index("accession")["candidate_key"]
-        top1[scheme_name] = tmp
-    summary = pd.DataFrame({
-        "top1_weak": top1.get("weak"),
-        "top1_medium": top1.get("medium"),
-        "top1_strong": top1.get("strong"),
-    })
-    summary["stable_top1"] = (summary["top1_weak"] == summary["top1_medium"]) & (summary["top1_medium"] == summary["top1_strong"])
-    summary = summary.reset_index()
-    summary.to_excel(OUT_XLSX.replace(".xlsx", "_sensitivity_summary.xlsx"), index=False)
-    # ---- 8) save model artifacts ----
+    # ---- 5) save model artifacts ----
     with open(os.path.join(OUT_DIR, "pwm_tp.json"), "w", encoding="utf-8") as f:
         json.dump(pwm_tp, f, indent=2)
     with open(os.path.join(OUT_DIR, "pwm_tn.json"), "w", encoding="utf-8") as f:
@@ -444,7 +415,7 @@ def score_candidates_excel(require_5utr=False):
         json.dump(lm_tn5, f, indent=2)
     with open(os.path.join(OUT_DIR, "motif_weights.json"), "w", encoding="utf-8") as f:
         json.dump(motif_weights, f, indent=2)
-    # ---- 9) save tp/tn.tsv ----
+    # ---- 6) save tp/tn.tsv ----
     write_lm_tsv(lm_tp3, os.path.join(OUT_DIR, "tp_lm3.tsv"))
     write_lm_tsv(lm_tp5, os.path.join(OUT_DIR, "tp_lm5.tsv"))
     write_lm_tsv(lm_tn3, os.path.join(OUT_DIR, "tn_lm3.tsv"))

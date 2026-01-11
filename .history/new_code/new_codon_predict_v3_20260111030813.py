@@ -13,9 +13,9 @@ from itertools import product
 INPUT_DIR = "/Volumes/caca/work_mechanism/new_file/02figure/Eu_genome_modified"
 CDS_FA = os.path.join(INPUT_DIR, "Eu_CDS.fasta")
 GENOME_FA = os.path.join(INPUT_DIR, "Eu_genome.fasta")
-CANDIDATES_XLSX = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/output_candidates.xlsx"
+CANDIDATES_XLSX = os.path.join(INPUT_DIR, "output_candidates.xlsx")
 GFF3_FA = os.path.join(INPUT_DIR, "GWHBISF00000000.gff")
-OUT_DIR = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v3"
+OUT_DIR = os.path.join(INPUT_DIR, "codon_prediction_v3")
 OUT_XLSX = os.path.join(OUT_DIR, "candidates_scored.xlsx")
 SHEET_NAME = "output_candidates"
 

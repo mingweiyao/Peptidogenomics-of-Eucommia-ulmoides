@@ -659,6 +659,7 @@
 #     except Exception as e:
 #         logger.critical(f"程序终止：{str(e)}")
 
+
 # # 蛋白质性质预测错误的肽段重新预测
 # import pandas as pd
 # from Bio.SeqUtils.ProtParam import ProteinAnalysis

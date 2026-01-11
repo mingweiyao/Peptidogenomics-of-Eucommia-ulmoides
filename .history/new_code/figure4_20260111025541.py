@@ -74,74 +74,6 @@
 #         ylims=((0, 400), (600, 800), (2800, 3000))
 #     )
 
-# # 提取基因的Kozak序列
-# import pandas as pd
-# from Bio import SeqIO
-# import re
-# from tqdm import tqdm
-# position_regex = re.compile(r'Position=([GWHBISF\d]+): (\d+).*?(\d+):\s([+-])')
-# def extract_translation_start_positions(protein_file):
-#     protein_start_positions = {}
-#     for rec in SeqIO.parse(protein_file, "fasta"):
-#         description = rec.description
-#         match = position_regex.search(description)
-#         if match:
-#             chrom = match.group(1) 
-#             start_position = match.group(2)
-#             end_position = match.group(3)
-#             strand = match.group(4)
-#             protein_start_positions[rec.id] = (chrom, int(start_position), int(end_position), strand)
-#     return protein_start_positions
-# def extract_kozak_sequence_from_genome(genome_dict, chrom, start, end, strand, flank=6):
-#     if chrom in genome_dict:
-#         seq = genome_dict[chrom]
-#         if strand == '-':
-#             kozak_seq = seq[end-9:end+6].reverse_complement()
-#         else:
-#             kozak_seq = seq[start-7:start+8]
-#     return kozak_seq
-# def extract_kozak_sequences(protein_file, genome_file):
-#     protein_positions = extract_translation_start_positions(protein_file)
-#     kozak_sequences = {}
-#     genome_dict = {rec.id: rec.seq for rec in SeqIO.parse(genome_file, "fasta")}
-#     for protein_id, (gene_id, start, end, strand) in tqdm(protein_positions.items(), desc="Extracting Kozak sequences", unit="protein"):
-#         chrom = gene_id
-#         kozak_seq = extract_kozak_sequence_from_genome(genome_dict, chrom, start, end, strand)
-#         if kozak_seq:
-#             kozak_sequences[protein_id] = kozak_seq
-#         else:
-#             print(f"警告: 未找到基因组序列 {protein_id} 对应的 Kozak 序列")
-#     return kozak_sequences
-# def main():
-#     protein_file = r"D:\Desktop\peptidemicro\00file\00raw\Raw_database\Eu_peptide_database.fa"
-#     genome_file = r"D:\Desktop\peptidemicro\00file\00raw\Raw_database\Eu_genome.fasta"
-#     output_file = r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\gene_kozak_sequences.xlsx"
-#     kozak_sequences = extract_kozak_sequences(protein_file, genome_file)
-#     df_kozak = pd.DataFrame(list(kozak_sequences.items()), columns=['Protein ID', 'Kozak Sequence'])
-#     df_kozak.to_excel(output_file, index=False)
-# if __name__ == "__main__":
-#     main()
-
-# # Kozak序列位置分析
-# import pandas as pd
-# file = r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\output_best.xlsx"
-# df = pd.read_excel(file, sheet_name="GTG")
-# seqs = df['kozak_seq'].dropna().astype(str)
-# seqs = seqs[seqs.str.len() == 15]
-# pos_counts = {i: {} for i in range(1, 16)}
-# for s in seqs:
-#     for i, ch in enumerate(s, start=1):
-#         pos_counts[i][ch] = pos_counts[i].get(ch, 0) + 1
-# all_chars = sorted({ch for counts in pos_counts.values() for ch in counts.keys()})
-# result_df = pd.DataFrame(
-#     index=all_chars,
-#     columns=[f"X{i}" for i in range(1, 16)]
-# )
-# for pos in range(1, 16):
-#     for ch, cnt in pos_counts[pos].items():
-#         result_df.loc[ch, f"X{pos}"] = cnt
-# result_df = result_df.fillna(0).astype(int)
-# result_df.to_excel(r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\sp_GTG_kozak_seq_statistic.xlsx")
 
 # 起始密码子预测
 import pandas as pd
@@ -418,4 +350,75 @@ def main():
     print(f"✅ 已输出 candidates：{out_cand}（每个 accession 所有候选 ORF，含 rank）")
 if __name__ == "__main__":
     main()
+
+# # 提取基因的Kozak序列
+# import pandas as pd
+# from Bio import SeqIO
+# import re
+# from tqdm import tqdm
+# position_regex = re.compile(r'Position=([GWHBISF\d]+): (\d+).*?(\d+):\s([+-])')
+# def extract_translation_start_positions(protein_file):
+#     protein_start_positions = {}
+#     for rec in SeqIO.parse(protein_file, "fasta"):
+#         description = rec.description
+#         match = position_regex.search(description)
+#         if match:
+#             chrom = match.group(1) 
+#             start_position = match.group(2)
+#             end_position = match.group(3)
+#             strand = match.group(4)
+#             protein_start_positions[rec.id] = (chrom, int(start_position), int(end_position), strand)
+#     return protein_start_positions
+# def extract_kozak_sequence_from_genome(genome_dict, chrom, start, end, strand, flank=6):
+#     if chrom in genome_dict:
+#         seq = genome_dict[chrom]
+#         if strand == '-':
+#             kozak_seq = seq[end-9:end+6].reverse_complement()
+#         else:
+#             kozak_seq = seq[start-7:start+8]
+#     return kozak_seq
+# def extract_kozak_sequences(protein_file, genome_file):
+#     protein_positions = extract_translation_start_positions(protein_file)
+#     kozak_sequences = {}
+#     genome_dict = {rec.id: rec.seq for rec in SeqIO.parse(genome_file, "fasta")}
+#     for protein_id, (gene_id, start, end, strand) in tqdm(protein_positions.items(), desc="Extracting Kozak sequences", unit="protein"):
+#         chrom = gene_id
+#         kozak_seq = extract_kozak_sequence_from_genome(genome_dict, chrom, start, end, strand)
+#         if kozak_seq:
+#             kozak_sequences[protein_id] = kozak_seq
+#         else:
+#             print(f"警告: 未找到基因组序列 {protein_id} 对应的 Kozak 序列")
+#     return kozak_sequences
+# def main():
+#     protein_file = r"D:\Desktop\peptidemicro\00file\00raw\Raw_database\Eu_peptide_database.fa"
+#     genome_file = r"D:\Desktop\peptidemicro\00file\00raw\Raw_database\Eu_genome.fasta"
+#     output_file = r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\gene_kozak_sequences.xlsx"
+#     kozak_sequences = extract_kozak_sequences(protein_file, genome_file)
+#     df_kozak = pd.DataFrame(list(kozak_sequences.items()), columns=['Protein ID', 'Kozak Sequence'])
+#     df_kozak.to_excel(output_file, index=False)
+# if __name__ == "__main__":
+#     main()
+
+# # Kozak序列位置分析
+# import pandas as pd
+# file = r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\output_best.xlsx"
+# df = pd.read_excel(file, sheet_name="GTG")
+# seqs = df['kozak_seq'].dropna().astype(str)
+# seqs = seqs[seqs.str.len() == 15]
+# pos_counts = {i: {} for i in range(1, 16)}
+# for s in seqs:
+#     for i, ch in enumerate(s, start=1):
+#         pos_counts[i][ch] = pos_counts[i].get(ch, 0) + 1
+# all_chars = sorted({ch for counts in pos_counts.values() for ch in counts.keys()})
+# result_df = pd.DataFrame(
+#     index=all_chars,
+#     columns=[f"X{i}" for i in range(1, 16)]
+# )
+# for pos in range(1, 16):
+#     for ch, cnt in pos_counts[pos].items():
+#         result_df.loc[ch, f"X{pos}"] = cnt
+# result_df = result_df.fillna(0).astype(int)
+# result_df.to_excel(r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\sp_GTG_kozak_seq_statistic.xlsx")
+
+
 

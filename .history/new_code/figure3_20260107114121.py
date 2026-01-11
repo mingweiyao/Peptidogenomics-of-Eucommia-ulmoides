@@ -1,5 +1,64 @@
+# # 将Excel中的基因注释信息转换为GFF3格式文件
+# from datetime import datetime
+# import pandas as pd
+# def excel_to_gff3(df, output_gff):
+#     required_columns = ['ID', 'start', 'end', 'strand', 'chrom']
+#     missing_cols = [col for col in required_columns if col not in df.columns]
+#     if missing_cols:
+#         print(f"错误: 缺少必要的列: {', '.join(missing_cols)}")
+#         return
+#     gff_header = f"""##gff-version 3
+# ##date {datetime.now().strftime('%Y-%m-%d')}
+# ##source {df}
+# ##genome-build v1.0
+# """
+#     gff_lines = []
+#     for idx, row in df.iterrows():
+#         seqid = row['chrom']
+#         source = "EuNCP"
+#         start = int(row['start'])
+#         end = int(row['end'])
+#         strand = row['strand']
+#         gene_id = row['ID']
+#         gene_line = (
+#             f"{seqid}\t{source}\tgene\t{start}\t{end}\t.\t{strand}\t.\t"
+#             f"ID={gene_id};Name={gene_id}"
+#         )
+#         gff_lines.append(gene_line)
+#         mrna_id = f"{gene_id}.t1"
+#         mrna_line = (
+#             f"{seqid}\t{source}\tmRNA\t{start}\t{end}\t.\t{strand}\t.\t"
+#             f"ID={mrna_id};Parent={gene_id};product=predicted protein"
+#         )
+#         gff_lines.append(mrna_line)
+#         exon_id = f"{mrna_id}.exon1"
+#         exon_line = (
+#             f"{seqid}\t{source}\texon\t{start}\t{end}\t.\t{strand}\t.\t"
+#             f"ID={exon_id};Parent={mrna_id}"
+#         )
+#         gff_lines.append(exon_line)
+#         cds_id = f"{mrna_id}.cds"
+#         cds_line = (
+#             f"{seqid}\t{source}\tCDS\t{start}\t{end}\t.\t{strand}\t0\t"
+#             f"ID={cds_id};Parent={mrna_id}"
+#         )
+#         gff_lines.append(cds_line)
+#     try:
+#         with open(output_gff, 'w') as f:
+#             f.write(gff_header)
+#             f.write("\n".join(gff_lines))
+#         print(f"成功生成GFF3文件: {output_gff}")
+#         print(f"转换了 {len(df)} 条基因记录，共生成 {len(gff_lines)} 行GFF记录")
+#     except Exception as e:
+#         print(f"写入GFF文件失败: {e}")
+# excel_file = r"D:\Desktop\peptidemicro\00file\01figure\Eu_genome_modified\new_sp_info.xlsx"
+# output_gff = r"D:\Desktop\peptidemicro\00file\01figure\Eu_genome_modified\new_sp_info_chrom.gff3"
+# df = pd.read_excel(excel_file, sheet_name='chrom')
+# excel_to_gff3(df, output_gff)
+
 # # 染色体密度图（R）
 # library(RIdeogram)
+
 # Eu_karyotype <- read.table("D:/Desktop/peptidemicro/00file/01figure/figure3/figure3c_seq_len.txt", header = T, stringsAsFactors = F)
 # sp_density <- GFFex(input = "D:/Desktop/peptidemicro/00file/01figure/Eu_genome_modified/new_sp_info_chrom.gff3", 
 #                     karyotype = "D:/Desktop/peptidemicro/00file/01figure/figure3/figure3c_seq_len.txt", 
@@ -9,6 +68,7 @@
 # ideogram(karyotype = Eu_karyotype, overlaid = sp_density, label = label_file, label_type = "marker")
 # ideogram(karyotype = Eu_karyotype, overlaid = sp_density)
 # convertSVG("chromosome.svg", device = "pdf")
+
 # write.table(
 #   sp_density,
 #   file = "D:/Desktop/peptidemicro/00file/01figure/figure3/figure3c_sp_density.txt",
