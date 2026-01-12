@@ -37,10 +37,6 @@ E_MAX = {
     "ACG": 40.0,
     "GTG": 20.0,
     "TTG": 10.0,
-    "ATA":  5.0,
-    "ATT":  5.0,
-    "ATC":  5.0,
-    # others: very weak
 }
 DEFAULT_E_MAX = 2.0  # for other codons (very weak prior)
 P4_G_FOLD = {
@@ -48,11 +44,14 @@ P4_G_FOLD = {
     "ACG":  7.0,  # ~7x
     "GTG":  5.0,  # ~5x
     "TTG":  2.0,  # optional/weak; paper less explicit, keep conservative
-    "ATA":  2.0,  # AUx ~2x
-    "ATT":  2.0,
-    "ATC":  2.0,
+    "ATG":  1.2,
 }
-
+P3_FOLD = {
+    "ATG": {"A": 1.1, "G": 1.0, "C": 0.9, "T": 0.9},
+    "CTG": {"A": 3.0, "G": 2.0, "C": 1.0, "T": 1.0},
+    "ACG": {"A": 3.0, "G": 2.0, "C": 1.0, "T": 1.0},
+    "GTG": {"A": 2.5, "G": 2.0, "C": 1.0, "T": 1.0},
+}
 # =========================================================
 # CDS parsing
 # =========================================================
@@ -309,13 +308,15 @@ def sinit_from_codon_context(codon, kozak):
     w = (kozak).upper()
     if len(c) != 3 or any(ch not in "ACGT" for ch in c): return float("nan")
     if len(w) != 13 or any(ch not in "ACGT" for ch in w): return float("nan")
-    base_p4 = w[-1]
+    base_p4 = w[9]
+    base_p3 = w[3]
     e = E_MAX.get(c, DEFAULT_E_MAX)
     s_base = math.log(e / E_MAX["ATG"])
     s_inter = 0.0
     if base_p4 == "G":
         fold = P4_G_FOLD.get(c, 1.0)
         s_inter = math.log(fold) if fold > 0 else 0.0
+    
     return float(s_base + s_inter)
 def write_lm_tsv(lm_obj, out_tsv):
     rows = []
