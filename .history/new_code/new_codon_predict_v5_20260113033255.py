@@ -14,6 +14,7 @@ INPUT_DIR = "/Volumes/caca/work_mechanism/new_file/02figure/Eu_genome_modified"
 CDS_FA = os.path.join(INPUT_DIR, "Eu_CDS.fasta")
 GENOME_FA = os.path.join(INPUT_DIR, "Eu_genome.fasta")
 CANDIDATES_XLSX = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/output_candidates.xlsx"
+CODO_EFFICIENCY = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_efficiency.xlsx"
 GFF3_FA = os.path.join(INPUT_DIR, "GWHBISF00000000.gff")
 OUT_DIR = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v4"
 OUT_XLSX = os.path.join(OUT_DIR, "candidates_scored.xlsx")
@@ -30,22 +31,15 @@ KMER = (3, 5)
 
 MOTIFS_DNA = ["TTC", "TCT", "CTC", "TCTTC", "TCTCT"]
 MOTIF_EPS = 1e-9
-
-E_MAX = {
-    "ATG": 100.0,
-    "CTG": 50.0,
-    "ACG": 40.0,
-    "GTG": 20.0,
-    "TTG": 10.0,
-}
-DEFAULT_E_MAX = 2.0  # for other codons (very weak prior)
-P4_G_FOLD = {
-    "CTG": 10.0,  # ~10x
-    "ACG":  7.0,  # ~7x
-    "GTG":  5.0,  # ~5x
-    "TTG":  2.0,  # optional/weak; paper less explicit, keep conservative
-    "ATG":  1.2,
-}
+# =========================================================
+# CODON efficiency parsing
+# =========================================================
+def parse_codon_file(CODO_EFFICIENCY):
+    df = pd.read_excel(CODO_EFFICIENCY)
+    codon_efficiency = {}
+    for _, r in df.iterrows():
+        codon_efficiency[r['TIS Sequence']] = r['TIS Efficiency']
+    return codon_efficiency
 # =========================================================
 # CDS parsing
 # =========================================================
@@ -179,29 +173,6 @@ def compute_motif_weights(lm_tp3, lm_tp5, lm_tn3, lm_tn5, motifs=MOTIFS_DNA, eps
 # =========================================================
 # Training (PWM + LR)
 # =========================================================
-def kozak_window(seq, tis_pos):
-    s = tis_pos - 6
-    e = tis_pos + 7
-    if s < 0 or e > len(seq): return None
-    w = seq[s:e].upper()
-    return w if len(w) == 13 else None
-def build_pwm(tp_windows, pseudocount=1.0):
-    if not tp_windows: raise ValueError("TP kozak windows 为空，无法建 PWM")
-    counts = {b: np.full(13, pseudocount, dtype=float) for b in "ACGT"}
-    for w in tp_windows:
-        if len(w) != 13: continue
-        for i, ch in enumerate(w):
-            if ch in counts: counts[ch][i] += 1.0
-    totals = sum(counts[b] for b in "ACGT")
-    return {b: (counts[b] / totals).tolist() for b in "ACGT"}
-def kozak_logodds(w, pwm_tp, pwm_tn, eps=1e-12):
-    s = 0.0
-    for i, ch in enumerate(w):
-        if ch in "ACGT":
-            p = max(pwm_tp[ch][i], eps)
-            q = max(pwm_tn[ch][i], eps)
-            s += math.log(p / q)
-    return float(s)
 def cu_fraction(up):
     return (sum(1 for ch in up if ch in "CT") / len(up)) if up else float("nan")
 def score_seq_ll(seq, lm_obj, k):
@@ -238,27 +209,12 @@ def motif_rate(seq, motif):
             cnt += 1
     return cnt / denom if denom > 0 else 0.0
 def train_pwm_and_lr(df, motif_weights):
-    # 1) PWM from TP windows
-    tp_ws = []
-    tn_ws = []
-    for _, r in df.iterrows():
-        w = kozak_window(r["seq"], int(r["tis_pos"]))
-        if w is None or (not DNA_RE.fullmatch(w)): continue
-        if int(r["label"]) == 1: tp_ws.append(w)
-        else: tn_ws.append(w)
-    pwm_tp = build_pwm(tp_ws)
-    pwm_tn = build_pwm(tn_ws)
-    # 2) Features
     X = []; y = []
     for _, r in df.iterrows():
         seq = r["seq"].upper()
         tis = int(r["tis_pos"])
-        w = kozak_window(seq, tis)
         up = upstream_window(seq, tis)
-        if w is None or up is None: continue
-        if not DNA_RE.fullmatch(w): continue
         if not DNA_RE_100.fullmatch(up): continue
-        kz = kozak_logodds(w, pwm_tp, pwm_tn)
         cu = cu_fraction(up)
         # ll_tp3 = score_seq_ll(up, lm_tp3, 3)
         # ll_tp5 = score_seq_ll(up, lm_tp5, 5)
@@ -267,8 +223,8 @@ def train_pwm_and_lr(df, motif_weights):
         # llr3 = ll_tp3 - ll_bg3
         # llr5 = ll_tp5 - ll_bg5
         ms = motif_score(up, motif_weights)
-        if any(np.isnan(v) for v in [kz, cu, ms]): continue
-        X.append([kz, cu, ms])
+        if any(np.isnan(v) for v in [cu, ms]): continue
+        X.append([cu, ms])
         y.append(int(r["label"]))
     X = np.asarray(X, float)
     y = np.asarray(y, int)
@@ -282,16 +238,15 @@ def train_pwm_and_lr(df, motif_weights):
     lr.fit(Z, y)
     weights = {
         "beta0": float(lr.intercept_[0]),
-        "w1": float(lr.coef_[0][0]),  # kozak_logodds
-        "w2": float(lr.coef_[0][1]),  # cu_fraction
-        "w3": float(lr.coef_[0][2]),  # motif_score
+        "w1": float(lr.coef_[0][0]),  # cu_fraction
+        "w2": float(lr.coef_[0][1]),  # motif_score
     }
     std = {
         "mu": mu.tolist(),
         "sd": sd.tolist(),
-        "feat": ["kozak_logodds", "cu_fraction", "motif_score"],
+        "feat": ["cu_fraction", "motif_score"],
     }
-    return pwm_tp, pwm_tn, weights, std
+    return weights, std
 # =========================================================
 # Candidate scoring helpers
 # =========================================================
@@ -326,6 +281,7 @@ def score_candidates_excel(require_5utr=False):
     os.makedirs(OUT_DIR, exist_ok=True)
     # ---- 0) Load genome & CDS ----
     genome_dict = {rec.id: str(rec.seq).upper() for rec in SeqIO.parse(GENOME_FA, "fasta")}
+    codon_efficiency = parse_codon_file(CODO_EFFICIENCY)
     # genome_bg = compute_genome_bg(genome_dict)
     cds_dict = load_cds_fasta(CDS_FA, GFF3_FA, genome_dict, require_5utr=require_5utr)
     # ---- 1) Train TP LM + BG LM (3mer/5mer) ----
@@ -334,30 +290,21 @@ def score_candidates_excel(require_5utr=False):
     # ---- 2) Compute motif weights (TP vs CDS background) ----
     motif_weights = compute_motif_weights(lm_tp3, lm_tp5, lm_tn3, lm_tn5, motifs=MOTIFS_DNA)
     # ---- 3) Train PWM + LR weights ----
-    pwm_tp, pwm_tn, weights, std = train_pwm_and_lr(df, motif_weights)
+    weights, std = train_pwm_and_lr(df, motif_weights)
     # ---- 4) Read candidates ----
     df_sp = pd.read_excel(CANDIDATES_XLSX, sheet_name=SHEET_NAME)
     mu = np.array(std["mu"], float)
     sd = np.array(std["sd"], float)
     candidate_keys = []
-    kozak_scores = []
     cu_fracs = []
     motif_scores = []
-    codon_scores = []
-    tis_scores = []
     for _, r in df_sp.iterrows():
         chrom = str(r.get("chrom", ""))
         strand = str(r.get("strand", ""))
         start = int(r.get("phy_start", -1))
         end = int(r.get("phy_end", -1))
-        codon = str(r.get("codon", "")).upper()
         candidate_keys.append(make_candidate_key(r))
         g = genome_dict[chrom]
-        w = str(r.get("kozak_seq", "")).upper()[:13]
-        if len(w) != 13 or (not DNA_RE.fullmatch(w)):
-            kozak_scores.append(np.nan); cu_fracs.append(np.nan)
-            motif_scores.append(np.nan); tis_scores.append(np.nan)
-            continue
         if strand == "+":
             left = start - (UP_START + 1)
             right = start - 1
@@ -367,44 +314,34 @@ def score_candidates_excel(require_5utr=False):
             right = end + UP_START
             up = str(Seq(g[left:right]).reverse_complement()) if (left >= 0 and right <= len(g)) else None
         if up is None or len(up) != UP_LEN or (not DNA_RE_100.fullmatch(up)):
-            kozak_scores.append(np.nan); cu_fracs.append(np.nan)
-            motif_scores.append(np.nan); tis_scores.append(np.nan)
+            cu_fracs.append(np.nan); motif_scores.append(np.nan)
             continue
-        kz = kozak_logodds(w, pwm_tp, pwm_tn)
         cu = cu_fraction(up)
         ms = motif_score(up, motif_weights)
-        z = (np.array([kz, cu, ms], float) - mu) / sd
+        z = (np.array([cu, ms], float) - mu) / sd
         score_base = (
             weights["beta0"]
             + weights["w1"] * z[0]
             + weights["w2"] * z[1]
-            + weights["w3"] * z[2]
         )
-        kozak_scores.append(kz)
         cu_fracs.append(cu)
         motif_scores.append(ms)
         # codon and background
-        codon_score = sinit_from_codon_context(codon, w)
-        codon_scores.append(codon_score)
-        tis_scores.append(score_base + codon_score)
+        w = str(r.get("kozak_seq", "")).upper()[2:10]
+        codon_score = codon_efficiency(w)
     df_sp["candidate_key"] = candidate_keys
-    df_sp["kozak_score"] = kozak_scores
     df_sp["cu_fraction"] = cu_fracs
     df_sp["motif_score"] = motif_scores
-    df_sp['codon_score'] = codon_scores
-    df_sp['tis_scores'] = tis_scores
+    df_sp['upsteam_score'] = score_base
+    df_sp['codon_efficiency'] = codon_score
     df_sp["tis_rank"] = (
         df_sp
-        .groupby("accession")["tis_scores"]
+        .groupby("accession")["codon_efficiency"]
         .rank(method="min", ascending=False)
         .astype("Int64")
     )
     df_sp.to_excel(OUT_XLSX, index=False)
     # ---- 5) save model artifacts ----
-    with open(os.path.join(OUT_DIR, "pwm_tp.json"), "w", encoding="utf-8") as f:
-        json.dump(pwm_tp, f, indent=2)
-    with open(os.path.join(OUT_DIR, "pwm_tn.json"), "w", encoding="utf-8") as f:
-        json.dump(pwm_tn, f, indent=2)
     with open(os.path.join(OUT_DIR, "weights.json"), "w", encoding="utf-8") as f:
         json.dump(weights, f, indent=2)
     with open(os.path.join(OUT_DIR, "standardizer.json"), "w", encoding="utf-8") as f:
