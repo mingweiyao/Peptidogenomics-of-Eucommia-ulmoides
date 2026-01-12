@@ -122,27 +122,6 @@
 # if __name__ == "__main__":
 #     main()
 
-# # Kozak序列位置分析
-# import pandas as pd
-# file = r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\output_best.xlsx"
-# df = pd.read_excel(file, sheet_name="GTG")
-# seqs = df['kozak_seq'].dropna().astype(str)
-# seqs = seqs[seqs.str.len() == 15]
-# pos_counts = {i: {} for i in range(1, 16)}
-# for s in seqs:
-#     for i, ch in enumerate(s, start=1):
-#         pos_counts[i][ch] = pos_counts[i].get(ch, 0) + 1
-# all_chars = sorted({ch for counts in pos_counts.values() for ch in counts.keys()})
-# result_df = pd.DataFrame(
-#     index=all_chars,
-#     columns=[f"X{i}" for i in range(1, 16)]
-# )
-# for pos in range(1, 16):
-#     for ch, cnt in pos_counts[pos].items():
-#         result_df.loc[ch, f"X{pos}"] = cnt
-# result_df = result_df.fillna(0).astype(int)
-# result_df.to_excel(r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\sp_GTG_kozak_seq_statistic.xlsx")
-
 # # 起始密码子预测
 # import pandas as pd
 # from Bio import SeqIO
@@ -443,21 +422,67 @@
 #         f"/Volumes/caca/work_mechanism/new_file/02figure/figure4/figure4c_pwm_log_matrix.xlsx"
     # )
 
-import pandas as pd
-IN_XLSX  = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v4/candidates_scored.xlsx"
-OUT_XLSX = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/candidates_scored_with_delta.xlsx"
-df = pd.read_excel(IN_XLSX, sheet_name="Sheet1")
-delta = (
-    df[df["tis_rank"].isin([1, 2])]
-    .pivot(index="accession", columns="tis_rank", values="tis_scores")
-)
-delta["rank1_rank2_delta"] = delta[1] - delta[2]
-df = df.merge(
-    delta["rank1_rank2_delta"],
-    left_on="accession",
-    right_index=True,
-    how="left"
-)
-df.loc[df["tis_rank"] != 1, "rank1_rank2_delta"] = pd.NA
-df.to_excel(OUT_XLSX, index=False)
+# import pandas as pd
+# IN_XLSX  = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v4/candidates_scored.xlsx"
+# OUT_XLSX = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/candidates_scored_with_delta.xlsx"
+# df = pd.read_excel(IN_XLSX, sheet_name="Sheet1")
+# delta = (
+#     df[df["tis_rank"].isin([1, 2])]
+#     .pivot(index="accession", columns="tis_rank", values="tis_scores")
+# )
+# delta["rank1_rank2_delta"] = delta[1] - delta[2]
+# df = df.merge(
+#     delta["rank1_rank2_delta"],
+#     left_on="accession",
+#     right_index=True,
+#     how="left"
+# )
+# df.loc[df["tis_rank"] != 1, "rank1_rank2_delta"] = pd.NA
+# df.to_excel(OUT_XLSX, index=False)
 
+# # Kozak序列位置分析
+# import pandas as pd
+# file = r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\output_best.xlsx"
+# df = pd.read_excel(file, sheet_name="GTG")
+# seqs = df['kozak_seq'].dropna().astype(str)
+# seqs = seqs[seqs.str.len() == 15]
+# pos_counts = {i: {} for i in range(1, 16)}
+# for s in seqs:
+#     for i, ch in enumerate(s, start=1):
+#         pos_counts[i][ch] = pos_counts[i].get(ch, 0) + 1
+# all_chars = sorted({ch for counts in pos_counts.values() for ch in counts.keys()})
+# result_df = pd.DataFrame(
+#     index=all_chars,
+#     columns=[f"X{i}" for i in range(1, 16)]
+# )
+# for pos in range(1, 16):
+#     for ch, cnt in pos_counts[pos].items():
+#         result_df.loc[ch, f"X{pos}"] = cnt
+# result_df = result_df.fillna(0).astype(int)
+# result_df.to_excel(r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\sp_GTG_kozak_seq_statistic.xlsx")
+
+import pandas as pd
+in_file = r"F:\work_mechanism\new_file\02figure\figure4\codon\codon_prediction\codon_prediction_v4\candidates_scored.xlsx"
+out_file = r"F:\work_mechanism\new_file\02figure\figure4\kozak_count.xlsx"
+codons = ["CTG", "ACG", "GTG", "ATG", "TTG"]
+SEQ_COL = "kozak_seq"
+CODON_COL = "codon"
+L = 13
+df = pd.read_excel(in_file, sheet_name="rank1")
+def count_matrix(seqs, L=13):
+    bases = ['A', 'C', 'G', 'T']
+    cols = [f"X{i}" for i in range(1, L + 1)]
+    m = pd.DataFrame(0, index=bases, columns=cols, dtype=int)
+    seqs = (pd.Series(seqs).dropna().astype(str).str.upper().str.slice(0, L))
+    seqs = seqs[seqs.str.len() == L]
+    seqs = seqs[seqs.str.fullmatch(rf"[ACGT]{{{L}}}")]
+    for s in seqs:
+        for i, ch in enumerate(s, start=1):
+            m.loc[ch, f"X{i}"] += 1
+    return m
+with pd.ExcelWriter(out_file, engine="openpyxl") as writer:
+    count_matrix(df[SEQ_COL], L=L).to_excel(writer, sheet_name="ALL")
+    codon_series = df[CODON_COL].fillna("").astype(str).str.upper()
+    for c in codons:
+        sub = df.loc[codon_series.str.contains(c, regex=False), SEQ_COL]
+        count_matrix(sub, L=L).to_excel(writer, sheet_name=c)    
