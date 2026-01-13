@@ -6,7 +6,7 @@ from Bio.Seq import Seq
 _genome_dict = None
 _max_scan_nt = None
 
-MAX_SCAN_NT = 1200
+MAX_SCAN_NT = 900
 THREADS = 100
 
 # -----------------------------
@@ -128,7 +128,7 @@ def _find_stop_minus(seq_str, min_start, max_scan_nt):
         phy_start = min_start - 3 * i
         if triplet in MINUS_STOP_CODONS: return phy_start
     return None
-def enumerate_orf_candidates_minus(genome_seq, min_start, max_end, max_scan_nt=MAX_SCAN_NT, flank=6):
+def enumerate_orf_candidates_minus(genome_seq, min_start, max_end, max_scan_nt=300, flank=6):
     seq_str = str(Seq(str(genome_seq)).upper())
     candidates = []
     for phy_end, triplet_raw in _iter_start_candidates_minus(seq_str, max_end, max_scan_nt):

@@ -6,9 +6,6 @@ from Bio.Seq import Seq
 _genome_dict = None
 _max_scan_nt = None
 
-MAX_SCAN_NT = 1200
-THREADS = 100
-
 # -----------------------------
 # 1) 常量与全局变量
 # -----------------------------
@@ -128,7 +125,7 @@ def _find_stop_minus(seq_str, min_start, max_scan_nt):
         phy_start = min_start - 3 * i
         if triplet in MINUS_STOP_CODONS: return phy_start
     return None
-def enumerate_orf_candidates_minus(genome_seq, min_start, max_end, max_scan_nt=MAX_SCAN_NT, flank=6):
+def enumerate_orf_candidates_minus(genome_seq, min_start, max_end, max_scan_nt=300, flank=6):
     seq_str = str(Seq(str(genome_seq)).upper())
     candidates = []
     for phy_end, triplet_raw in _iter_start_candidates_minus(seq_str, max_end, max_scan_nt):
@@ -162,7 +159,7 @@ def run_scan_and_output_for_item(item):
         candidates = enumerate_orf_candidates_minus(gseq, min_start, max_end, _max_scan_nt, flank=6)
     item['candidates'] = candidates
     return item
-def run_scan_and_output(stats, genome_file, max_scan_nt=MAX_SCAN_NT, nproc=THREADS):
+def run_scan_and_output(stats, genome_file, max_scan_nt=300, nproc=20):
     with Pool(processes=nproc, initializer=init_worker, initargs=(genome_file, max_scan_nt)) as pool:
         stats_update = list(pool.imap_unordered(run_scan_and_output_for_item, stats, chunksize=50))
     return stats_update
@@ -174,7 +171,7 @@ def main():
     # 1) 汇总 accession 覆盖信息
     stats = filter_peptide_seq_cal_cov(peptide_file, database_file)
     # 2) 多进程扫描并枚举候选
-    stats_update = run_scan_and_output(stats, genome_file, max_scan_nt=MAX_SCAN_NT, nproc=THREADS)
+    stats_update = run_scan_and_output(stats, genome_file, max_scan_nt=600, nproc=100)
     # 3) 输出 candidates 表
     cand_rows = []
     for it in stats_update:

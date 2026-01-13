@@ -6,7 +6,7 @@ from Bio.Seq import Seq
 _genome_dict = None
 _max_scan_nt = None
 
-MAX_SCAN_NT = 1200
+MAX_SCAN_NT = 900
 THREADS = 100
 
 # -----------------------------
