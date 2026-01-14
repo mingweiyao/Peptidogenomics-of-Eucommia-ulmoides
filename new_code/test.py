@@ -6,8 +6,8 @@ from Bio.Seq import Seq
 _genome_dict = None
 _max_scan_nt = None
 
-MAX_SCAN_NT = 1200
-THREADS = 8
+MAX_SCAN_NT = 600
+THREADS = 100
 
 # -----------------------------
 # 1) 常量与全局变量
@@ -167,10 +167,10 @@ def run_scan_and_output(stats, genome_file, max_scan_nt=MAX_SCAN_NT, nproc=THREA
         stats_update = list(pool.imap_unordered(run_scan_and_output_for_item, stats, chunksize=50))
     return stats_update
 def main():
-    peptide_file  = "/Volumes/caca/work_mechanism/new_file/01location/rnaseq/03ouput/finally_expressed_sp_info.xlsx"
-    database_file = "/Volumes/caca/work_mechanism/new_file/00raw/Raw_database/Eu_peptide_database_customized_5.fa"
-    genome_file   = "/Volumes/caca/work_mechanism/new_file/00raw/Raw_database/Eu_genome.fasta"
-    out_cand = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/output_candidates.csv"
+    peptide_file  = "/media/wanglab/caca/work_mechanism/new_file/01location/rnaseq/03ouput/finally_expressed_sp_info.xlsx"
+    database_file = "/media/wanglab/caca/work_mechanism/new_file/00raw/Raw_database/Eu_peptide_database_customized_5.fa"
+    genome_file   = "/media/wanglab/caca/work_mechanism/new_file/00raw/Raw_database/Eu_genome.fasta"
+    out_cand = "/media/wanglab/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/output_candidates.csv"
     # 1) 汇总 accession 覆盖信息
     stats = filter_peptide_seq_cal_cov(peptide_file, database_file)
     # 2) 多进程扫描并枚举候选

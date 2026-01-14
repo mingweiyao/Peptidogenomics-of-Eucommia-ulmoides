@@ -1,7 +1,79 @@
+# # 将Excel中的基因坐标转换为GFF3格式：后续GFF文件生成以此代码为参考
+# from datetime import datetime
+# import pandas as pd
+# def excel_to_gff3(df, output_gff):
+#     required_columns = ['ID', 'start', 'end', 'strand', 'chrom']
+#     missing_cols = [col for col in required_columns if col not in df.columns]
+#     if missing_cols:
+#         print(f"错误: 缺少必要的列: {', '.join(missing_cols)}")
+#         return
+#     gff_header = f"""##gff-version 3
+# ##date {datetime.now().strftime('%Y-%m-%d')}
+# ##source EuNCP
+# ##genome-build v1.0
+# """
+#     gff_lines = []
+#     used_ids = set()
+#     for idx, row in df.iterrows():
+#         seqid = str(row['chrom']).strip()
+#         source = "EuNCP"
+#         start = int(row['start'])
+#         end = int(row['end'])
+#         if start > end:
+#             start, end = end, start
+#         strand = str(row['strand']).strip()
+#         if strand not in ['+', '-']:
+#             strand = '.'
+#         gene_id = str(row['ID']).strip()
+#         if gene_id == "" or gene_id.lower() == "nan":
+#             continue
+#         base_gene_id = gene_id
+#         n = 1
+#         while gene_id in used_ids:
+#             n += 1
+#             gene_id = f"{base_gene_id}_{n}"
+#         used_ids.add(gene_id)
+#         gene_line = (
+#             f"{seqid}\t{source}\tgene\t{start}\t{end}\t.\t{strand}\t.\t"
+#             f"ID={gene_id};Name={gene_id}"
+#         )
+#         gff_lines.append(gene_line)
+#         mrna_id = f"{gene_id}.t1"
+#         mrna_line = (
+#             f"{seqid}\t{source}\tmRNA\t{start}\t{end}\t.\t{strand}\t.\t"
+#             f"ID={mrna_id};Parent={gene_id};product=predicted_protein"
+#         )
+#         gff_lines.append(mrna_line)
+#         exon_id = f"{mrna_id}.exon1"
+#         exon_line = (
+#             f"{seqid}\t{source}\texon\t{start}\t{end}\t.\t{strand}\t.\t"
+#             f"ID={exon_id};Parent={mrna_id}"
+#         )
+#         gff_lines.append(exon_line)
+#         cds_id = f"{mrna_id}.cds"
+#         cds_line = (
+#             f"{seqid}\t{source}\tCDS\t{start}\t{end}\t.\t{strand}\t0\t"
+#             f"ID={cds_id};Parent={mrna_id}"
+#         )
+#         gff_lines.append(cds_line)
+#     try:
+#         with open(output_gff, 'w', encoding='utf-8') as f:
+#             f.write(gff_header)
+#             f.write("\n".join(gff_lines))
+#             f.write("\n")  # ✅ 修正：文件末尾补换行更稳
+#         print(f"成功生成GFF3文件: {output_gff}")
+#         print(f"转换了 {len(df)} 条记录（空ID已跳过），共生成 {len(gff_lines)} 行GFF记录")
+#     except Exception as e:
+#         print(f"写入GFF文件失败: {e}")
+# excel_file = r"F:\work_mechanism\new_file\01location\rnaseq\03ouput\finally_expressed_sp_info.xlsx"
+# output_gff = r"F:\work_mechanism\new_file\02figure\figure4\sp_codon.gff"
+# df = pd.read_excel(excel_file, sheet_name="unique")
+# excel_to_gff3(df, output_gff)
+
 # # 转录组数据基础的NCP分布veen图
 # import pandas as pd
-# gene_expression_df = pd.read_csv(r"D:\Desktop\peptidemicro\00file\00raw\rnaseq\03ouput\finally_filtered_genes.csv", index_col=0)
-# tissue_mapping_df = pd.read_excel(r"D:\Desktop\peptidemicro\00file\00raw\rnaseq\Total_rna_seq.xlsx", sheet_name="group")
+# gene_expression_df = pd.read_csv(r"F:\work_mechanism\new_file\01location\rnaseq\03ouput\finally_expressed_sp_cpm.csv", index_col=0)
+# tissue_mapping_df = pd.read_excel(r"D:\Desktop\Total_rna_seq.xlsx", sheet_name="extract")
 # tissue_group_to_samples = (tissue_mapping_df.groupby(['Tissues', 'Group'])['Sample'].apply(list).to_dict())
 # peptide_ids_by_tissue = {}
 # for (tissue, group), samples in tissue_group_to_samples.items():
@@ -17,7 +89,7 @@
 #     tissue: ids + [None] * (max_length - len(ids))
 #     for tissue, ids in peptide_ids_by_tissue.items()
 # })
-# output_excel_path = r"D:\Desktop\peptidemicro\00file\01figure\figure4\rnaseq_veen.xlsx"
+# output_excel_path = r"D:\Desktop\rnaseq_veen_leaf_location.xlsx"
 # peptide_ids_df.to_excel(output_excel_path, index=False)
 
 # # 数量-肽统计
@@ -63,9 +135,9 @@
 #     print(f"✅ 截断柱状图已保存为：{output_pdf_path}")
 #     return plot_data
 # if __name__ == "__main__":
-#     expression_file = r"D:\Desktop\peptidemicro\00file\01figure\finally_filtered_genes.csv"
-#     output_pdf = r"D:\Desktop\peptidemicro\00file\01figure\figure4\peptide_distribution_bar_truncated.pdf"
-#     output_csv = r"D:\Desktop\peptidemicro\00file\01figure\figure4\peptide_distribution_stat.csv"
+#     expression_file = r"F:\work_mechanism\new_file\01location\rnaseq\03ouput\finally_expressed_sp_cpm.csv"
+#     output_pdf = r"F:\work_mechanism\new_file\02figure\figure4\test_peptide_distribution_bar_truncated.pdf"
+#     output_csv = r"F:\work_mechanism\new_file\02figure\figure4\test_peptide_distribution_stat.csv"
 #     plot_peptide_distribution_bar_broken_y(
 #         expression_file,
 #         output_pdf,
@@ -461,28 +533,28 @@
 # result_df = result_df.fillna(0).astype(int)
 # result_df.to_excel(r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\sp_GTG_kozak_seq_statistic.xlsx")
 
-import pandas as pd
-in_file = r"F:\work_mechanism\new_file\02figure\figure4\codon\codon_prediction\codon_prediction_v4\candidates_scored.xlsx"
-out_file = r"F:\work_mechanism\new_file\02figure\figure4\kozak_count.xlsx"
-codons = ["CTG", "ACG", "GTG", "ATG", "TTG"]
-SEQ_COL = "kozak_seq"
-CODON_COL = "codon"
-L = 13
-df = pd.read_excel(in_file, sheet_name="rank1")
-def count_matrix(seqs, L=13):
-    bases = ['A', 'C', 'G', 'T']
-    cols = [f"X{i}" for i in range(1, L + 1)]
-    m = pd.DataFrame(0, index=bases, columns=cols, dtype=int)
-    seqs = (pd.Series(seqs).dropna().astype(str).str.upper().str.slice(0, L))
-    seqs = seqs[seqs.str.len() == L]
-    seqs = seqs[seqs.str.fullmatch(rf"[ACGT]{{{L}}}")]
-    for s in seqs:
-        for i, ch in enumerate(s, start=1):
-            m.loc[ch, f"X{i}"] += 1
-    return m
-with pd.ExcelWriter(out_file, engine="openpyxl") as writer:
-    count_matrix(df[SEQ_COL], L=L).to_excel(writer, sheet_name="ALL")
-    codon_series = df[CODON_COL].fillna("").astype(str).str.upper()
-    for c in codons:
-        sub = df.loc[codon_series.str.contains(c, regex=False), SEQ_COL]
-        count_matrix(sub, L=L).to_excel(writer, sheet_name=c)    
+# import pandas as pd
+# in_file = r"F:\work_mechanism\new_file\02figure\figure4\codon\codon_prediction\codon_prediction_v4\candidates_scored.xlsx"
+# out_file = r"F:\work_mechanism\new_file\02figure\figure4\kozak_count.xlsx"
+# codons = ["CTG", "ACG", "GTG", "ATG", "TTG"]
+# SEQ_COL = "kozak_seq"
+# CODON_COL = "codon"
+# L = 13
+# df = pd.read_excel(in_file, sheet_name="rank1")
+# def count_matrix(seqs, L=13):
+#     bases = ['A', 'C', 'G', 'T']
+#     cols = [f"X{i}" for i in range(1, L + 1)]
+#     m = pd.DataFrame(0, index=bases, columns=cols, dtype=int)
+#     seqs = (pd.Series(seqs).dropna().astype(str).str.upper().str.slice(0, L))
+#     seqs = seqs[seqs.str.len() == L]
+#     seqs = seqs[seqs.str.fullmatch(rf"[ACGT]{{{L}}}")]
+#     for s in seqs:
+#         for i, ch in enumerate(s, start=1):
+#             m.loc[ch, f"X{i}"] += 1
+#     return m
+# with pd.ExcelWriter(out_file, engine="openpyxl") as writer:
+#     count_matrix(df[SEQ_COL], L=L).to_excel(writer, sheet_name="ALL")
+#     codon_series = df[CODON_COL].fillna("").astype(str).str.upper()
+#     for c in codons:
+#         sub = df.loc[codon_series.str.contains(c, regex=False), SEQ_COL]
+#         count_matrix(sub, L=L).to_excel(writer, sheet_name=c)    
