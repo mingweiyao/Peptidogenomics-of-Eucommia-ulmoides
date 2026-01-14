@@ -146,104 +146,104 @@
 #         ylims=((0, 400), (600, 800), (2800, 3000))
 #     )
 
-# # 筛选有肽段支持的新转录本
-# import os
-# import pandas as pd
-# import gffutils
-# def build_or_load_db(anno_file, db_path="transcriptome.db"):
-#     if os.path.exists(db_path):
-#         return gffutils.FeatureDB(db_path, keep_order=True)
-#     db = gffutils.create_db(
-#         anno_file,
-#         dbfn=db_path,
-#         force=True,
-#         keep_order=True,
-#         merge_strategy="merge",
-#         sort_attribute_values=True,
-#         disable_infer_transcripts=True,
-#         disable_infer_genes=True
-#     )
-#     return db
-# def gtf_attr_str(attrs: dict):
-#     parts = []
-#     for k, vs in attrs.items():
-#         if vs is None: continue
-#         if not isinstance(vs, (list, tuple)): vs = [vs]
-#         for v in vs: parts.append(f'{k} "{v}";')
-#     return " ".join(parts)
-# def feature_to_gtf_line(f):
-#     seqid = f.seqid
-#     source = f.source if f.source is not None else "."
-#     featuretype = f.featuretype
-#     start = int(f.start)
-#     end = int(f.end)
-#     score = f.score if f.score is not None else "."
-#     strand = f.strand if f.strand is not None else "."
-#     frame = f.frame if f.frame is not None else "."
-#     attr = gtf_attr_str(f.attributes)
-#     return "\t".join([seqid, source, featuretype, str(start), str(end), str(score), strand, str(frame), attr])
-# def overlap(a_start, a_end, b_start, b_end):
-#     return a_start <= b_start <= b_end <= a_end
-# def annotate_peptides_and_export(peptide_df, db, out_peptide_xlsx, out_hit_gtf):
-#     hit_tx_ids = set()
-#     add_cols = {
-#         "hit_transcript_ids": [],
-#         "hit_tx_start": [],
-#         "hit_tx_end": [],
-#         "hit_tx_strand": [],
-#     }
-#     for _, row in peptide_df.iterrows():
-#         chrom = str(row["chrom"])
-#         pep_start = int(row["start"])
-#         pep_end = int(row["end"])
-#         transcripts = db.region(seqid=chrom, start=pep_start, end=pep_end, featuretype="transcript")
-#         cur_ids, cur_starts, cur_ends, cur_strands = [], [], [], []
-#         for tx in transcripts:
-#             if not overlap(tx.start, tx.end, pep_start, pep_end): continue
-#             exon_hit = False
-#             for exon in db.children(tx, featuretype="exon", order_by="start"):
-#                 if overlap(exon.start, exon.end, pep_start, pep_end):
-#                     exon_hit = True
-#                     break
-#             if not exon_hit: continue
-#             # 命中这个 transcript
-#             hit_tx_ids.add(tx.id)
-#             cur_ids.append(tx.id)
-#             cur_starts.append(str(int(tx.start)))
-#             cur_ends.append(str(int(tx.end)))
-#             cur_strands.append(tx.strand if tx.strand is not None else ".")
-#         add_cols["hit_transcript_ids"].append(";".join(cur_ids) if cur_ids else "")
-#         add_cols["hit_tx_start"].append(";".join(cur_starts) if cur_starts else "")
-#         add_cols["hit_tx_end"].append(";".join(cur_ends) if cur_ends else "")
-#         add_cols["hit_tx_strand"].append(";".join(cur_strands) if cur_strands else "")
-#     # 1) 输出：肽段表追加命中信息
-#     out_df = peptide_df.copy()
-#     for k, v in add_cols.items(): out_df[k] = v
-#     out_df.to_excel(out_peptide_xlsx, index=False)
-#     # 2) 输出：命中的转录本 + 全部 exon 到新的 GTF
-#     with open(out_hit_gtf, "w") as fw:
-#         fw.write("# subset GTF: transcripts validated by peptides (exon-overlap)\n")
-#         for tx_id in sorted(hit_tx_ids):
-#             tx = db[tx_id]
-#             fw.write(feature_to_gtf_line(tx) + "\n")
-#             for exon in db.children(tx, featuretype="exon", order_by="start"):
-#                 fw.write(feature_to_gtf_line(exon) + "\n")
-# def main():
-#     excel_file = "finally_expressed_sp_info.xlsx"
-#     sheet_name = "unique"
-#     anno_file = "merged.gtf"
-#     out_peptide_xlsx = "peptide_annotated.xlsx"
-#     out_hit_gtf = "hit_transcripts.gtf"
-#     db_path = "transcriptome.db"
-#     peptide_df = pd.read_excel(excel_file, sheet_name=sheet_name)
-#     for col in ["chrom", "start", "end"]:
-#         if col not in peptide_df.columns: raise ValueError(f"Excel 缺少必要列: {col}")
-#     db = build_or_load_db(anno_file, db_path=db_path)
-#     annotate_peptides_and_export(peptide_df, db, out_peptide_xlsx, out_hit_gtf)
-#     print(f"完成：\n- {out_peptide_xlsx}\n- {out_hit_gtf}\n- (db) {db_path}")
-# if __name__ == "__main__":
-#     main()
-
+# 筛选有肽段支持的新转录本
+import os
+import pandas as pd
+import gffutils
+def build_or_load_db(anno_file, db_path="transcriptome.db"):
+    if os.path.exists(db_path):
+        return gffutils.FeatureDB(db_path, keep_order=True)
+    db = gffutils.create_db(
+        anno_file,
+        dbfn=db_path,
+        force=True,
+        keep_order=True,
+        merge_strategy="merge",
+        sort_attribute_values=True,
+        disable_infer_transcripts=True,
+        disable_infer_genes=True
+    )
+    return db
+def gtf_attr_str(attrs: dict):
+    parts = []
+    for k, vs in attrs.items():
+        if vs is None: continue
+        if not isinstance(vs, (list, tuple)): vs = [vs]
+        for v in vs: parts.append(f'{k} "{v}";')
+    return " ".join(parts)
+def feature_to_gtf_line(f):
+    seqid = f.seqid
+    source = f.source if f.source is not None else "."
+    featuretype = f.featuretype
+    start = int(f.start)
+    end = int(f.end)
+    score = f.score if f.score is not None else "."
+    strand = f.strand if f.strand is not None else "."
+    frame = f.frame if f.frame is not None else "."
+    attr = gtf_attr_str(f.attributes)
+    return "\t".join([seqid, source, featuretype, str(start), str(end), str(score), strand, str(frame), attr])
+def overlap(a_start, a_end, b_start, b_end):
+    return a_start <= b_start <= b_end <= a_end
+def annotate_peptides_and_export(peptide_df, db, out_peptide_xlsx, out_hit_gtf):
+    hit_tx_ids = set()
+    add_cols = {
+        "hit_transcript_ids": [],
+        "hit_tx_start": [],
+        "hit_tx_end": [],
+        "hit_tx_strand": [],
+    }
+    for _, row in peptide_df.iterrows():
+        chrom = str(row["chrom"])
+        pep_start = int(row["start"])
+        pep_end = int(row["end"])
+        transcripts = db.features_of_type("transcript", seqid=chrom)
+        cur_ids, cur_starts, cur_ends, cur_strands = [], [], [], []
+        for tx in transcripts:
+            if not overlap(tx.start, tx.end, pep_start, pep_end): continue
+            exon_hit = False
+            for exon in db.children(tx, featuretype="exon", order_by="start"):
+                if overlap(exon.start, exon.end, pep_start, pep_end):
+                    exon_hit = True
+                    break
+            if not exon_hit: continue
+            # 命中这个 transcript
+            hit_tx_ids.add(tx.id)
+            cur_ids.append(tx.id)
+            cur_starts.append(str(int(tx.start)))
+            cur_ends.append(str(int(tx.end)))
+            cur_strands.append(tx.strand if tx.strand is not None else ".")
+        add_cols["hit_transcript_ids"].append(";".join(cur_ids) if cur_ids else "")
+        add_cols["hit_tx_start"].append(";".join(cur_starts) if cur_starts else "")
+        add_cols["hit_tx_end"].append(";".join(cur_ends) if cur_ends else "")
+        add_cols["hit_tx_strand"].append(";".join(cur_strands) if cur_strands else "")
+    # 1) 输出：肽段表追加命中信息
+    out_df = peptide_df.copy()
+    for k, v in add_cols.items(): out_df[k] = v
+    out_df.to_excel(out_peptide_xlsx, index=False)
+    # 2) 输出：命中的转录本 + 全部 exon 到新的 GTF
+    with open(out_hit_gtf, "w") as fw:
+        fw.write("# subset GTF: transcripts validated by peptides (exon-overlap)\n")
+        for tx_id in sorted(hit_tx_ids):
+            tx = db[tx_id]
+            fw.write(feature_to_gtf_line(tx) + "\n")
+            for exon in db.children(tx, featuretype="exon", order_by="start"):
+                fw.write(feature_to_gtf_line(exon) + "\n")
+def main():
+    excel_file = "peptide_data.xlsx"
+    sheet_name = "unique"
+    anno_file = "merged.gtf"
+    out_peptide_xlsx = "peptide_annotated.xlsx"
+    out_hit_gtf = "hit_transcripts.gtf"
+    db_path = "transcriptome.db"
+    peptide_df = pd.read_excel(excel_file, sheet_name=sheet_name)
+    for col in ["chrom", "start", "end"]:
+        if col not in peptide_df.columns:
+            raise ValueError(f"Excel 缺少必要列: {col}")
+    db = build_or_load_db(anno_file, db_path=db_path)
+    annotate_peptides_and_export(peptide_df, db, out_peptide_xlsx, out_hit_gtf)
+    print(f"完成：\n- {out_peptide_xlsx}\n- {out_hit_gtf}\n- (db) {db_path}")
+if __name__ == "__main__":
+    main()
 
 
 # # 提取基因的Kozak序列
@@ -294,190 +294,190 @@
 # if __name__ == "__main__":
 #     main()
 
-# 起始密码子预测
-import pandas as pd
-from Bio import SeqIO
-from multiprocessing import Pool
-from Bio.Seq import Seq
-_genome_dict = None
-_max_scan_nt = None
-MAX_SCAN_NT = 600
-THREADS = 100
-# -----------------------------
-# 1) 常量与全局变量
-# -----------------------------
-START_CODONS = {"ATG", "CTG", "GTG", "TTG", "ACG"}
-STOP_CODONS  = {"TAA", "TAG", "TGA"}
-# 负链：沿用你原脚本的“在正向基因组序列上匹配的三联体集合”
-MINUS_START_CODONS = {"CAT", "CAG", "CAC", "CAA", "CGT"}
-MINUS_STOP_CODONS  = {"TTA", "CTA", "TCA"}
-# 1) 汇总 accession 覆盖信息
-def merge_segments(segments):
-    min_start = min(segments, key=lambda x: x[0])[0]
-    max_end = max(segments, key=lambda x: x[1])[1]
-    return min_start, max_end
-def filter_peptide_seq_cal_cov(peptide_file, database_file):
-    database_dict = {}
-    for rec in SeqIO.parse(database_file, "fasta"):
-        database_dict[rec.id] = rec.seq
-    df_NCP = pd.read_excel(peptide_file, sheet_name="unique")
-    accession_segments = {}
-    for _, row in df_NCP.iterrows():
-        accession = row['accessions']
-        start = int(row['start'])
-        end = int(row['end'])
-        chrom = row['chrom']
-        strand = row['strand']
-        accession_segments.setdefault(accession, []).append((start, end, chrom, strand))
-    stats = []
-    for accession, segments in accession_segments.items():
-        if accession not in database_dict: continue
-        seq = database_dict[accession]
-        length_aa = len(seq)
-        min_start, max_end = merge_segments(segments)
-        cov_length_aa = (max_end - min_start + 1) / 3.0
-        coverage = cov_length_aa / length_aa if length_aa > 0 else None
-        chrom = segments[0][2]
-        strand = segments[0][3]
-        peptide_count = len(segments)
-        stats.append({
-            'accession': accession,
-            'chrom': chrom,
-            'strand': strand,
-            'min_start': min_start,
-            'max_end': max_end,
-            'coverage': coverage,
-            'peptide_count': peptide_count,
-            'sequence_length_aa': length_aa
-        })
-    return stats
-# 2) 多进程扫描并枚举候选
-def init_worker(genome_file, max_scan_nt):
-    global _genome_dict, _max_scan_nt
-    _max_scan_nt = max_scan_nt
-    _genome_dict = {}
-    for rec in SeqIO.parse(genome_file, "fasta"):
-        _genome_dict[rec.id] = rec.seq
-def _iter_start_candidates_plus(seq_str, min_start, max_scan_nt):
-    max_steps = int(max_scan_nt / 3)
-    L = len(seq_str)
-    for i in range(max_steps):
-        s = min_start - 3 * i
-        if s - 1 < 0 or s + 2 > L: continue
-        triplet = seq_str[s - 1:s + 2]
-        if triplet in START_CODONS:
-            yield s, triplet
-def _find_stop_plus(seq_str, max_end, max_scan_nt):
-    max_steps = int(max_scan_nt / 3)
-    L = len(seq_str)
-    for j in range(max_steps):
-        e = max_end + 3 * j
-        if e + 3 > L: break
-        triplet = seq_str[e:e + 3]
-        if triplet in STOP_CODONS: return e
-    return None
-def kozak_score_cal(genome_seq, phy_start, phy_end, strand, flank=6):
-    genome_seq = Seq(str(genome_seq).upper())
-    if strand == '+': ctx = genome_seq[phy_start - 1 - flank: phy_start + flank + 2]
-    else: ctx = genome_seq[phy_end - 3 - flank: phy_end + flank].reverse_complement()
-    return {"context": str(ctx)}
-def enumerate_orf_candidates_plus(genome_seq, min_start, max_end, max_scan_nt=300, flank=6):
-    seq_str = str(Seq(str(genome_seq)).upper())
-    candidates = []
-    for phy_start, triplet in _iter_start_candidates_plus(seq_str, min_start, max_scan_nt):
-        phy_end = _find_stop_plus(seq_str, max_end, max_scan_nt)
-        if phy_end is None: continue
-        if not (phy_start <= min_start and phy_end >= max_end): continue
-        kozak = kozak_score_cal(seq_str, phy_start, phy_end, strand='+', flank=flank)
-        candidates.append({
-            "phy_start": phy_start,
-            "phy_end": phy_end,
-            "prior": triplet,
-            "kozak_seq": kozak["context"],
-            "start_to_peptide_nt": int(min_start - phy_start)
-        })
-    return candidates
-def _iter_start_candidates_minus(seq_str, max_end, max_scan_nt):
-    max_steps = int(max_scan_nt / 3)
-    L = len(seq_str)
-    for i in range(max_steps):
-        left = max_end + 3 * (i - 1)
-        right = max_end + 3 * i
-        if right <= 0 or left >= L: continue
-        triplet = seq_str[left:right]
-        if len(triplet) != 3: continue
-        if triplet in MINUS_START_CODONS:
-            phy_end = max_end + 3 * i
-            yield phy_end, triplet
-def _find_stop_minus(seq_str, min_start, max_scan_nt):
-    max_steps = int(max_scan_nt / 3)
-    L = len(seq_str)
-    for i in range(max_steps):
-        left = (min_start - 1) - 3 * (i + 1)
-        right = (min_start - 1) - 3 * i
-        if right <= 0 or left >= L: continue
-        triplet = seq_str[left:right]
-        if len(triplet) != 3: continue
-        phy_start = min_start - 3 * i
-        if triplet in MINUS_STOP_CODONS: return phy_start
-    return None
-def enumerate_orf_candidates_minus(genome_seq, min_start, max_end, max_scan_nt=MAX_SCAN_NT, flank=6):
-    seq_str = str(Seq(str(genome_seq)).upper())
-    candidates = []
-    for phy_end, triplet_raw in _iter_start_candidates_minus(seq_str, max_end, max_scan_nt):
-        phy_start = _find_stop_minus(seq_str, min_start, max_scan_nt)
-        if phy_start is None: continue
-        if not (phy_start <= min_start and phy_end >= max_end): continue
-        kozak = kozak_score_cal(seq_str, phy_start, phy_end, strand='-', flank=flank)
-        triplet_rc = str(Seq(triplet_raw).reverse_complement())
-        candidates.append({
-            "phy_start": phy_start,
-            "phy_end": phy_end,
-            "prior": triplet_rc,
-            "kozak_seq": kozak["context"],
-            "start_to_peptide_nt": int(phy_end - max_end)
-        })
-    return candidates
-def run_scan_and_output_for_item(item):
-    global _genome_dict, _max_scan_nt
-    chrom = item['chrom']
-    strand = item['strand']
-    min_start = int(item['min_start'])
-    max_end = int(item['max_end'])
-    if chrom not in _genome_dict:
-        item['note'] = 'chrom_not_found'
-        item['candidates'] = []
-        return item
-    gseq = _genome_dict[chrom]
-    if strand == '+':
-        candidates = enumerate_orf_candidates_plus(gseq, min_start, max_end, _max_scan_nt, flank=6)
-    else:
-        candidates = enumerate_orf_candidates_minus(gseq, min_start, max_end, _max_scan_nt, flank=6)
-    item['candidates'] = candidates
-    return item
-def run_scan_and_output(stats, genome_file, max_scan_nt=MAX_SCAN_NT, nproc=THREADS):
-    with Pool(processes=nproc, initializer=init_worker, initargs=(genome_file, max_scan_nt)) as pool:
-        stats_update = list(pool.imap_unordered(run_scan_and_output_for_item, stats, chunksize=50))
-    return stats_update
-def main():
-    peptide_file  = "/media/wanglab/caca/work_mechanism/new_file/01location/rnaseq/03ouput/finally_expressed_sp_info.xlsx"
-    database_file = "/media/wanglab/caca/work_mechanism/new_file/00raw/Raw_database/Eu_peptide_database_customized_5.fa"
-    genome_file   = "/media/wanglab/caca/work_mechanism/new_file/00raw/Raw_database/Eu_genome.fasta"
-    out_cand = "/media/wanglab/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/output_candidates.csv"
-    # 1) 汇总 accession 覆盖信息
-    stats = filter_peptide_seq_cal_cov(peptide_file, database_file)
-    # 2) 多进程扫描并枚举候选
-    stats_update = run_scan_and_output(stats, genome_file, max_scan_nt=MAX_SCAN_NT, nproc=THREADS)
-    # 3) 输出 candidates 表
-    cand_rows = []
-    for it in stats_update:
-        base = {k: it[k] for k in it.keys() if k not in ("candidates")}
-        for rank, cand in enumerate(it.get("candidates", []), start=1):
-            cand_rows.append({**base, "rank": rank, **cand})
-    df_cand = pd.DataFrame(cand_rows)
-    df_cand.to_csv(out_cand, index=False)
-if __name__ == "__main__":
-    main()
+# # 起始密码子预测
+# import pandas as pd
+# from Bio import SeqIO
+# from multiprocessing import Pool
+# from Bio.Seq import Seq
+# _genome_dict = None
+# _max_scan_nt = None
+# MAX_SCAN_NT = 600
+# THREADS = 100
+# # -----------------------------
+# # 1) 常量与全局变量
+# # -----------------------------
+# START_CODONS = {"ATG", "CTG", "GTG", "TTG", "ACG"}
+# STOP_CODONS  = {"TAA", "TAG", "TGA"}
+# # 负链：沿用你原脚本的“在正向基因组序列上匹配的三联体集合”
+# MINUS_START_CODONS = {"CAT", "CAG", "CAC", "CAA", "CGT"}
+# MINUS_STOP_CODONS  = {"TTA", "CTA", "TCA"}
+# # 1) 汇总 accession 覆盖信息
+# def merge_segments(segments):
+#     min_start = min(segments, key=lambda x: x[0])[0]
+#     max_end = max(segments, key=lambda x: x[1])[1]
+#     return min_start, max_end
+# def filter_peptide_seq_cal_cov(peptide_file, database_file):
+#     database_dict = {}
+#     for rec in SeqIO.parse(database_file, "fasta"):
+#         database_dict[rec.id] = rec.seq
+#     df_NCP = pd.read_excel(peptide_file, sheet_name="unique")
+#     accession_segments = {}
+#     for _, row in df_NCP.iterrows():
+#         accession = row['accessions']
+#         start = int(row['start'])
+#         end = int(row['end'])
+#         chrom = row['chrom']
+#         strand = row['strand']
+#         accession_segments.setdefault(accession, []).append((start, end, chrom, strand))
+#     stats = []
+#     for accession, segments in accession_segments.items():
+#         if accession not in database_dict: continue
+#         seq = database_dict[accession]
+#         length_aa = len(seq)
+#         min_start, max_end = merge_segments(segments)
+#         cov_length_aa = (max_end - min_start + 1) / 3.0
+#         coverage = cov_length_aa / length_aa if length_aa > 0 else None
+#         chrom = segments[0][2]
+#         strand = segments[0][3]
+#         peptide_count = len(segments)
+#         stats.append({
+#             'accession': accession,
+#             'chrom': chrom,
+#             'strand': strand,
+#             'min_start': min_start,
+#             'max_end': max_end,
+#             'coverage': coverage,
+#             'peptide_count': peptide_count,
+#             'sequence_length_aa': length_aa
+#         })
+#     return stats
+# # 2) 多进程扫描并枚举候选
+# def init_worker(genome_file, max_scan_nt):
+#     global _genome_dict, _max_scan_nt
+#     _max_scan_nt = max_scan_nt
+#     _genome_dict = {}
+#     for rec in SeqIO.parse(genome_file, "fasta"):
+#         _genome_dict[rec.id] = rec.seq
+# def _iter_start_candidates_plus(seq_str, min_start, max_scan_nt):
+#     max_steps = int(max_scan_nt / 3)
+#     L = len(seq_str)
+#     for i in range(max_steps):
+#         s = min_start - 3 * i
+#         if s - 1 < 0 or s + 2 > L: continue
+#         triplet = seq_str[s - 1:s + 2]
+#         if triplet in START_CODONS:
+#             yield s, triplet
+# def _find_stop_plus(seq_str, max_end, max_scan_nt):
+#     max_steps = int(max_scan_nt / 3)
+#     L = len(seq_str)
+#     for j in range(max_steps):
+#         e = max_end + 3 * j
+#         if e + 3 > L: break
+#         triplet = seq_str[e:e + 3]
+#         if triplet in STOP_CODONS: return e
+#     return None
+# def kozak_score_cal(genome_seq, phy_start, phy_end, strand, flank=6):
+#     genome_seq = Seq(str(genome_seq).upper())
+#     if strand == '+': ctx = genome_seq[phy_start - 1 - flank: phy_start + flank + 2]
+#     else: ctx = genome_seq[phy_end - 3 - flank: phy_end + flank].reverse_complement()
+#     return {"context": str(ctx)}
+# def enumerate_orf_candidates_plus(genome_seq, min_start, max_end, max_scan_nt=300, flank=6):
+#     seq_str = str(Seq(str(genome_seq)).upper())
+#     candidates = []
+#     for phy_start, triplet in _iter_start_candidates_plus(seq_str, min_start, max_scan_nt):
+#         phy_end = _find_stop_plus(seq_str, max_end, max_scan_nt)
+#         if phy_end is None: continue
+#         if not (phy_start <= min_start and phy_end >= max_end): continue
+#         kozak = kozak_score_cal(seq_str, phy_start, phy_end, strand='+', flank=flank)
+#         candidates.append({
+#             "phy_start": phy_start,
+#             "phy_end": phy_end,
+#             "prior": triplet,
+#             "kozak_seq": kozak["context"],
+#             "start_to_peptide_nt": int(min_start - phy_start)
+#         })
+#     return candidates
+# def _iter_start_candidates_minus(seq_str, max_end, max_scan_nt):
+#     max_steps = int(max_scan_nt / 3)
+#     L = len(seq_str)
+#     for i in range(max_steps):
+#         left = max_end + 3 * (i - 1)
+#         right = max_end + 3 * i
+#         if right <= 0 or left >= L: continue
+#         triplet = seq_str[left:right]
+#         if len(triplet) != 3: continue
+#         if triplet in MINUS_START_CODONS:
+#             phy_end = max_end + 3 * i
+#             yield phy_end, triplet
+# def _find_stop_minus(seq_str, min_start, max_scan_nt):
+#     max_steps = int(max_scan_nt / 3)
+#     L = len(seq_str)
+#     for i in range(max_steps):
+#         left = (min_start - 1) - 3 * (i + 1)
+#         right = (min_start - 1) - 3 * i
+#         if right <= 0 or left >= L: continue
+#         triplet = seq_str[left:right]
+#         if len(triplet) != 3: continue
+#         phy_start = min_start - 3 * i
+#         if triplet in MINUS_STOP_CODONS: return phy_start
+#     return None
+# def enumerate_orf_candidates_minus(genome_seq, min_start, max_end, max_scan_nt=MAX_SCAN_NT, flank=6):
+#     seq_str = str(Seq(str(genome_seq)).upper())
+#     candidates = []
+#     for phy_end, triplet_raw in _iter_start_candidates_minus(seq_str, max_end, max_scan_nt):
+#         phy_start = _find_stop_minus(seq_str, min_start, max_scan_nt)
+#         if phy_start is None: continue
+#         if not (phy_start <= min_start and phy_end >= max_end): continue
+#         kozak = kozak_score_cal(seq_str, phy_start, phy_end, strand='-', flank=flank)
+#         triplet_rc = str(Seq(triplet_raw).reverse_complement())
+#         candidates.append({
+#             "phy_start": phy_start,
+#             "phy_end": phy_end,
+#             "prior": triplet_rc,
+#             "kozak_seq": kozak["context"],
+#             "start_to_peptide_nt": int(phy_end - max_end)
+#         })
+#     return candidates
+# def run_scan_and_output_for_item(item):
+#     global _genome_dict, _max_scan_nt
+#     chrom = item['chrom']
+#     strand = item['strand']
+#     min_start = int(item['min_start'])
+#     max_end = int(item['max_end'])
+#     if chrom not in _genome_dict:
+#         item['note'] = 'chrom_not_found'
+#         item['candidates'] = []
+#         return item
+#     gseq = _genome_dict[chrom]
+#     if strand == '+':
+#         candidates = enumerate_orf_candidates_plus(gseq, min_start, max_end, _max_scan_nt, flank=6)
+#     else:
+#         candidates = enumerate_orf_candidates_minus(gseq, min_start, max_end, _max_scan_nt, flank=6)
+#     item['candidates'] = candidates
+#     return item
+# def run_scan_and_output(stats, genome_file, max_scan_nt=MAX_SCAN_NT, nproc=THREADS):
+#     with Pool(processes=nproc, initializer=init_worker, initargs=(genome_file, max_scan_nt)) as pool:
+#         stats_update = list(pool.imap_unordered(run_scan_and_output_for_item, stats, chunksize=50))
+#     return stats_update
+# def main():
+#     peptide_file  = "/media/wanglab/caca/work_mechanism/new_file/01location/rnaseq/03ouput/finally_expressed_sp_info.xlsx"
+#     database_file = "/media/wanglab/caca/work_mechanism/new_file/00raw/Raw_database/Eu_peptide_database_customized_5.fa"
+#     genome_file   = "/media/wanglab/caca/work_mechanism/new_file/00raw/Raw_database/Eu_genome.fasta"
+#     out_cand = "/media/wanglab/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/output_candidates.csv"
+#     # 1) 汇总 accession 覆盖信息
+#     stats = filter_peptide_seq_cal_cov(peptide_file, database_file)
+#     # 2) 多进程扫描并枚举候选
+#     stats_update = run_scan_and_output(stats, genome_file, max_scan_nt=MAX_SCAN_NT, nproc=THREADS)
+#     # 3) 输出 candidates 表
+#     cand_rows = []
+#     for it in stats_update:
+#         base = {k: it[k] for k in it.keys() if k not in ("candidates")}
+#         for rank, cand in enumerate(it.get("candidates", []), start=1):
+#             cand_rows.append({**base, "rank": rank, **cand})
+#     df_cand = pd.DataFrame(cand_rows)
+#     df_cand.to_csv(out_cand, index=False)
+# if __name__ == "__main__":
+#     main()
 
 # ==================== 画图 =====================
 # # figure1: pwm矩阵文件
