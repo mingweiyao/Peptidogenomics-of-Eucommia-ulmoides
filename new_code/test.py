@@ -5,7 +5,7 @@ from Bio.Seq import Seq
 import os, gffutils
 
 MAX_SCAN_NT = 600
-THREADS = 100
+THREADS = 3
 
 # -----------------------------
 # 1) 常量与全局变量
@@ -34,8 +34,6 @@ def _get_exons_for_transcript(db, transcript_id):
     exons_coords = [(e.start, e.end) for e in exons]
     if strand is None or chrom is None or not exons_coords:
         raise KeyError(f"Cannot find exons for transcript_id={transcript_id}")
-    if strand == "+": exons_coords.sort(key=lambda x: x[0])
-    else: exons_coords.sort(key=lambda x: x[0], reverse=True)
     return strand, chrom, exons_coords
 def _build_transcript_seq_and_mapper(genome_seq, exons_coords, strand):
     cum = 0
@@ -50,8 +48,7 @@ def _build_transcript_seq_and_mapper(genome_seq, exons_coords, strand):
     def map_genomic_pos_to_tpos(gpos):
         for (s, e, cum_before) in exon_blocks:
             if s <= gpos <= e:
-                if strand == "+": offset = gpos - s
-                else: offset = e - gpos
+                offset = gpos - s
                 return cum_before + offset + 1
         return None
     return spliced, map_genomic_pos_to_tpos
@@ -151,11 +148,13 @@ def run_scan_and_output_for_item(item):
     global _max_scan_nt
     gstart = int(item["start"])
     gend = int(item["end"])
-    hit_trans_ids = item["hit_transcript_ids"]
+    gstrand = str(item['strand'])
+    hit_trans_id = item["hit_transcript_ids"]
+    hit_trans_ids = hit_trans_id.split(";")
     per_hit = []
     for hit_id in hit_trans_ids:
         tx_seq, (tstart, tend), tx_strand, chrom = get_hit_transcript_dna_and_coords(hit_id, gstart, gend)
-        if tx_strand == '+':
+        if gstrand == '+':
             candidates = enumerate_orf_candidates_plus(tx_seq, tstart, tend, _max_scan_nt, flank=6)
         else:
             candidates = enumerate_orf_candidates_minus(tx_seq, tstart, tend, _max_scan_nt, flank=6)   
@@ -177,11 +176,11 @@ def run_scan_and_output(records, hit_transcript_gtf, genome_fasta, db_path, max_
         stats = list(pool.imap_unordered(run_scan_and_output_for_item, records, chunksize=50))
     return stats
 def main():
-    peptide_info = ""
-    hit_transcript_gtf = ""
-    genome_fasta = ""
-    out_cand = ""
-    db_path = ""
+    peptide_info = r"F:\work_mechanism\new_file\02figure\figure4\new_transcript\finally_expressed_sp_info_annotated.xlsx"
+    hit_transcript_gtf = r"F:\work_mechanism\new_file\02figure\figure4\new_transcript\hit_transcripts.gtf"
+    genome_fasta = r"F:\work_mechanism\new_file\02figure\Eu_genome_modified\Eu_genome.fasta"
+    out_cand = r"F:\work_mechanism\new_file\02figure\figure4\new_transcript\output.csv"
+    db_path = r"F:\work_mechanism\new_file\02figure\figure4\new_transcript\hit_transcripts.db"
     df = pd.read_excel(peptide_info, sheet_name="annotated")
     records = df.to_dict("records")
     stats = run_scan_and_output(records, hit_transcript_gtf, genome_fasta, db_path, max_scan_nt=MAX_SCAN_NT, nproc=THREADS)
