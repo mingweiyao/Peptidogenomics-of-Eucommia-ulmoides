@@ -15,7 +15,6 @@ MAX_SCAN_NT = 600
 THREADS = 3
 _genome_dict = None
 _max_scan_nt = None
-_hit_transcript_fasta = None
 
 # ========== 1. 汇总 accession 覆盖信息 ===========
 def extract_fasta_from_gtf(hit_transcript, db_path, genome_fasta):
@@ -27,37 +26,21 @@ def extract_fasta_from_gtf(hit_transcript, db_path, genome_fasta):
     genome_dict = {rec.id: rec.seq for rec in SeqIO.parse(genome_fasta, "fasta")}
     tx_iter = db.features_of_type("transcript")
     fasta_dict = {}
-    exons_coords_dict = {}
     for tx in tx_iter:
         tid = tx.id
         chrom = tx.chrom
         exons = list(db.children(tx, featuretype="exon", order_by="start"))
         exons_coords = [(e.start, e.end) for e in exons]
         exons_coords.sort(key=lambda x: x[0])
-        exons_coords_dict[tid] = exons_coords
         parts = [genome_dict[chrom][s - 1:e] for (s, e) in exons_coords]
         spliced = Seq("").join(parts)
-        fasta_dict[tid] = str(spliced)
-    return fasta_dict, exons_coords_dict
+        fasta_dict[tid] = {"seq": str(spliced), "exon_coord": exons_coords, "transcript": tx}
+    return fasta_dict
 def merge_segments(segments):
     min_start = min(segments, key=lambda x: x[0])[0]
     max_end = max(segments, key=lambda x: x[1])[1]
     return min_start, max_end
-def build_transcript_mapper(genome_seq, exons_coords):
-    cum = 0
-    exon_blocks = []
-    for (s,e) in exons_coords:
-        exon_blocks.append((s,e,cum))
-        cum += (e-s+1)
-    def map_genomic_pos_to_tpos(gpos):
-        for (s, e, cum_before) in exon_blocks:
-            if s <= gpos <= e:
-                offset = gpos - s
-                return cum_before + offset + 1
-        return None
-    return map_genomic_pos_to_tpos        
-def filter_peptide_seq_cal_cov(peptide_df, database_dict, exons_coords_dict):
-    global _genome_dict
+def filter_peptide_seq_cal_cov(peptide_df, database_dict):
     accession_segments = {}
     for _, row in peptide_df.iterrows():
         hit_trans_id = row["hit_transcript_ids"]
@@ -66,12 +49,9 @@ def filter_peptide_seq_cal_cov(peptide_df, database_dict, exons_coords_dict):
         end = int(row['end'])
         chrom = row['chrom']
         strand = row['strand']
-        mapper = build_transcript_mapper(_genome_dict[chrom], exons_coords_dict[chrom])
-        trans_start = mapper(start)
-        trans_end = mapper(end)
         for id in hit_trans_ids:
             if id.startwiths("evm"): continue
-            accession_segments.setdefault(id, []).append((trans_start, trans_end, chrom, strand))
+            accession_segments.setdefault(id, []).append((start, end, chrom, strand))
     stats = []
     for accession, segments in accession_segments.items():
         if accession not in database_dict: continue
@@ -95,10 +75,9 @@ def filter_peptide_seq_cal_cov(peptide_df, database_dict, exons_coords_dict):
         })
     return stats
 # ========== 2. 多进程扫描并枚举候选 ==========
-def init_worker(genome_file, hit_transcript_fasta, max_scan_nt):
-    global _genome_dict, _max_scan_nt, _hit_transcript_fasta
-    _max_scan_nt = max_scan_nt
-    _hit_transcript_fasta = hit_transcript_fasta
+def init_worker(genome_file):
+    global _genome_dict, _max_scan_nt
+    _max_scan_nt = MAX_SCAN_NT
     _genome_dict = {rec.id: rec.seq for rec in SeqIO.parse(genome_file, "fasta")}
 def _iter_start_candidates_plus(seq_str, min_start, max_scan_nt):
     max_steps = int(max_scan_nt / 3)
@@ -186,29 +165,20 @@ def run_scan_and_output_for_item(item):
     strand = item['strand']
     min_start = int(item['min_start'])
     max_end = int(item['max_end'])
-    hit_id = item['hit_transcript_ids']
-    hit_ids = hit_id.split(";")
-    per_hit = []
-    for id in hit_ids:
-        gseq = _hit_transcript_fasta[id]
-        if strand == '+':
-            candidates = enumerate_orf_candidates_plus(gseq, min_start, max_end, _max_scan_nt, flank=6)
-        else:
-            candidates = enumerate_orf_candidates_minus(gseq, min_start, max_end, _max_scan_nt, flank=6)
-        per_hit.append({
-                "hit_id": hit_id,
-                "chrom": chrom,
-                "tx_strand": strand,
-                "tstart": min_start,
-                "tend": max_end,
-                "candidates": candidates,
-                "error": None
-            })
-    item['per_hit'] = per_hit
+    if chrom not in _genome_dict:
+        item['note'] = 'chrom_not_found'
+        item['candidates'] = []
+        return item
+    gseq = _genome_dict[chrom]
+    if strand == '+':
+        candidates = enumerate_orf_candidates_plus(gseq, min_start, max_end, _max_scan_nt, flank=6)
+    else:
+        candidates = enumerate_orf_candidates_minus(gseq, min_start, max_end, _max_scan_nt, flank=6)
+    item['candidates'] = candidates
     return item
 
-def run_scan_and_output(stats, genome_file, hit_transcript_fasta, max_scan_nt=MAX_SCAN_NT, nproc=THREADS):
-    with Pool(processes=nproc, initializer=init_worker, initargs=(genome_file, hit_transcript_fasta, max_scan_nt)) as pool:
+def run_scan_and_output(stats, genome_file, max_scan_nt=MAX_SCAN_NT, nproc=THREADS):
+    with Pool(processes=nproc, initializer=init_worker, initargs=(genome_file)) as pool:
         stats_update = list(pool.imap_unordered(run_scan_and_output_for_item, stats, chunksize=50))
     return stats_update
 def main():
@@ -219,18 +189,11 @@ def main():
     db_path = r"F:\work_mechanism\new_file\02figure\figure4\new_transcript\hit_transcripts.db"
     df = pd.read_excel(peptide_info, sheet_name="annotated")
     # 1) 汇总 accession 覆盖信息
-    hit_transcript_fasta_dict, exons_coords_dict = extract_fasta_from_gtf(hit_transcript_gtf, db_path, genome_fasta)
-    stats = filter_peptide_seq_cal_cov(df, hit_transcript_fasta_dict, exons_coords_dict)
+    hit_transcript_fasta_dict = extract_fasta_from_gtf(hit_transcript_gtf, db_path, genome_fasta)
+    stats = filter_peptide_seq_cal_cov(df, hit_transcript_fasta_dict)
     # 2) 多进程扫描并枚举候选
-    stats_update = run_scan_and_output(stats, genome_fasta, hit_transcript_fasta=hit_transcript_fasta_dict, max_scan_nt=MAX_SCAN_NT, nproc=THREADS)
-    # 3) 输出 candidates 表
-    cand_rows = []
-    for it in stats_update:
-        base = {k: it[k] for k in it.keys() if k not in ("candidates")}
-        for rank, cand in enumerate(it.get("candidates", []), start=1):
-            cand_rows.append({**base, "rank": rank, **cand})
-    df_cand = pd.DataFrame(cand_rows)
-    df_cand.to_csv(out_cand, index=False)  
+    stats_update = run_scan_and_output(stats, genome_fasta, max_scan_nt=MAX_SCAN_NT, nproc=THREADS)
+    
 
 if __name__ == "__main__":
     main()
