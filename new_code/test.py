@@ -1,68 +1,76 @@
-
-# 起始密码子预测
 import pandas as pd
 from Bio import SeqIO
 from multiprocessing import Pool
 from Bio.Seq import Seq
-_genome_dict = None
-_max_scan_nt = None
+import os, gffutils
+
 MAX_SCAN_NT = 600
 THREADS = 100
+
 # -----------------------------
 # 1) 常量与全局变量
 # -----------------------------
 START_CODONS = {"ATG", "CTG", "GTG", "TTG", "ACG"}
 STOP_CODONS  = {"TAA", "TAG", "TGA"}
-# 负链：沿用你原脚本的“在正向基因组序列上匹配的三联体集合”
 MINUS_START_CODONS = {"CAT", "CAG", "CAC", "CAA", "CGT"}
 MINUS_STOP_CODONS  = {"TTA", "CTA", "TCA"}
-# 1) 汇总 accession 覆盖信息
-def merge_segments(segments):
-    min_start = min(segments, key=lambda x: x[0])[0]
-    max_end = max(segments, key=lambda x: x[1])[1]
-    return min_start, max_end
-def filter_peptide_seq_cal_cov(peptide_file, database_file):
-    database_dict = {}
-    for rec in SeqIO.parse(database_file, "fasta"):
-        database_dict[rec.id] = rec.seq
-    df_NCP = pd.read_excel(peptide_file, sheet_name="unique")
-    accession_segments = {}
-    for _, row in df_NCP.iterrows():
-        accession = row['accessions']
-        start = int(row['start'])
-        end = int(row['end'])
-        chrom = row['chrom']
-        strand = row['strand']
-        accession_segments.setdefault(accession, []).append((start, end, chrom, strand))
-    stats = []
-    for accession, segments in accession_segments.items():
-        if accession not in database_dict: continue
-        seq = database_dict[accession]
-        length_aa = len(seq)
-        min_start, max_end = merge_segments(segments)
-        cov_length_aa = (max_end - min_start + 1) / 3.0
-        coverage = cov_length_aa / length_aa if length_aa > 0 else None
-        chrom = segments[0][2]
-        strand = segments[0][3]
-        peptide_count = len(segments)
-        stats.append({
-            'accession': accession,
-            'chrom': chrom,
-            'strand': strand,
-            'min_start': min_start,
-            'max_end': max_end,
-            'coverage': coverage,
-            'peptide_count': peptide_count,
-            'sequence_length_aa': length_aa
-        })
-    return stats
-# 2) 多进程扫描并枚举候选
-def init_worker(genome_file, max_scan_nt):
-    global _genome_dict, _max_scan_nt
+
+def prepare_gffutils_db(trans_file, db_path):
+    if os.path.exists(db_path): return
+    gffutils.create_db(trans_file, dbfn=db_path, force=True,
+        keep_order=True, merge_strategy="merge", sort_attribute_values=True,
+        disable_infer_transcripts=True, disable_infer_genes=True)
+def init_worker(genome_fasta, db_path, max_scan_nt):
+    global _genome_dict, _max_scan_nt, _trans_db
     _max_scan_nt = max_scan_nt
     _genome_dict = {}
-    for rec in SeqIO.parse(genome_file, "fasta"):
-        _genome_dict[rec.id] = rec.seq
+    for rec in SeqIO.parse(genome_fasta, "fasta"): _genome_dict[rec.id] = rec.seq
+    _trans_db = gffutils.FeatureDB(db_path, keep_order=True)
+def _get_exons_for_transcript(db, transcript_id):
+    tx = db[transcript_id]
+    strand = tx.strand
+    chrom = tx.chrom
+    exons = list(db.children(tx, featuretype="exon", order_by="start"))
+    exons_coords = [(e.start, e.end) for e in exons]
+    if strand is None or chrom is None or not exons_coords:
+        raise KeyError(f"Cannot find exons for transcript_id={transcript_id}")
+    if strand == "+": exons_coords.sort(key=lambda x: x[0])
+    else: exons_coords.sort(key=lambda x: x[0], reverse=True)
+    return strand, chrom, exons_coords
+def _build_transcript_seq_and_mapper(genome_seq, exons_coords, strand):
+    cum = 0
+    exon_blocks = []
+    parts = []
+    for (s, e) in exons_coords:
+        exon_blocks.append((s, e, cum))
+        parts.append(genome_seq[s - 1 : e])
+        cum += (e - s + 1)
+    spliced = Seq("").join(parts)
+    if strand == "-": spliced = spliced.reverse_complement()
+    def map_genomic_pos_to_tpos(gpos):
+        for (s, e, cum_before) in exon_blocks:
+            if s <= gpos <= e:
+                if strand == "+": offset = gpos - s
+                else: offset = e - gpos
+                return cum_before + offset + 1
+        return None
+    return spliced, map_genomic_pos_to_tpos
+def get_hit_transcript_dna_and_coords(hit_id, gstart, gend):
+    global _genome_dict, _trans_db
+    strand, chrom, exons_coords = _get_exons_for_transcript(_trans_db, hit_id)
+    if chrom not in _genome_dict: raise KeyError(f"Chrom {chrom} not found in genome fasta ids")
+    genome_seq = _genome_dict[chrom]
+    tx_seq, mapper = _build_transcript_seq_and_mapper(genome_seq, exons_coords, strand)
+    t1 = mapper(gstart)
+    t2 = mapper(gend)
+    tstart, tend = (t1, t2) if t1 <= t2 else (t2, t1)
+    return str(tx_seq), (tstart, tend), strand, chrom
+
+def kozak_score_cal(genome_seq, phy_start, phy_end, strand, flank=6):
+    genome_seq = Seq(str(genome_seq).upper())
+    if strand == '+': ctx = genome_seq[phy_start - 1 - flank: phy_start + flank + 2]
+    else: ctx = genome_seq[phy_end - 3 - flank: phy_end + flank].reverse_complement()
+    return {"context": str(ctx)}
 def _iter_start_candidates_plus(seq_str, min_start, max_scan_nt):
     max_steps = int(max_scan_nt / 3)
     L = len(seq_str)
@@ -81,11 +89,6 @@ def _find_stop_plus(seq_str, max_end, max_scan_nt):
         triplet = seq_str[e:e + 3]
         if triplet in STOP_CODONS: return e
     return None
-def kozak_score_cal(genome_seq, phy_start, phy_end, strand, flank=6):
-    genome_seq = Seq(str(genome_seq).upper())
-    if strand == '+': ctx = genome_seq[phy_start - 1 - flank: phy_start + flank + 2]
-    else: ctx = genome_seq[phy_end - 3 - flank: phy_end + flank].reverse_complement()
-    return {"context": str(ctx)}
 def enumerate_orf_candidates_plus(genome_seq, min_start, max_end, max_scan_nt=300, flank=6):
     seq_str = str(Seq(str(genome_seq)).upper())
     candidates = []
@@ -143,43 +146,61 @@ def enumerate_orf_candidates_minus(genome_seq, min_start, max_end, max_scan_nt=M
             "start_to_peptide_nt": int(phy_end - max_end)
         })
     return candidates
+
 def run_scan_and_output_for_item(item):
-    global _genome_dict, _max_scan_nt
-    chrom = item['chrom']
-    strand = item['strand']
-    min_start = int(item['min_start'])
-    max_end = int(item['max_end'])
-    if chrom not in _genome_dict:
-        item['note'] = 'chrom_not_found'
-        item['candidates'] = []
-        return item
-    gseq = _genome_dict[chrom]
-    if strand == '+':
-        candidates = enumerate_orf_candidates_plus(gseq, min_start, max_end, _max_scan_nt, flank=6)
-    else:
-        candidates = enumerate_orf_candidates_minus(gseq, min_start, max_end, _max_scan_nt, flank=6)
-    item['candidates'] = candidates
-    return item
-def run_scan_and_output(stats, genome_file, max_scan_nt=MAX_SCAN_NT, nproc=THREADS):
-    with Pool(processes=nproc, initializer=init_worker, initargs=(genome_file, max_scan_nt)) as pool:
-        stats_update = list(pool.imap_unordered(run_scan_and_output_for_item, stats, chunksize=50))
-    return stats_update
+    global _max_scan_nt
+    gstart = int(item["start"])
+    gend = int(item["end"])
+    hit_trans_ids = item["hit_transcript_ids"]
+    per_hit = []
+    for hit_id in hit_trans_ids:
+        tx_seq, (tstart, tend), tx_strand, chrom = get_hit_transcript_dna_and_coords(hit_id, gstart, gend)
+        if tx_strand == '+':
+            candidates = enumerate_orf_candidates_plus(tx_seq, tstart, tend, _max_scan_nt, flank=6)
+        else:
+            candidates = enumerate_orf_candidates_minus(tx_seq, tstart, tend, _max_scan_nt, flank=6)   
+            per_hit.append({
+                "hit_id": hit_id,
+                "chrom": chrom,
+                "tx_strand": tx_strand,
+                "tstart": tstart,
+                "tend": tend,
+                "candidates": candidates,
+                "error": None
+            })
+    item["per_hit"] = per_hit
+    return item     
+
+def run_scan_and_output(records, hit_transcript_gtf, genome_fasta, db_path, max_scan_nt=MAX_SCAN_NT, nproc=THREADS):
+    prepare_gffutils_db(hit_transcript_gtf, db_path)
+    with Pool(processes=nproc, initializer=init_worker, initargs=(genome_fasta, db_path, max_scan_nt)) as pool:
+        stats = list(pool.imap_unordered(run_scan_and_output_for_item, records, chunksize=50))
+    return stats
 def main():
-    peptide_file  = "/media/wanglab/caca/work_mechanism/new_file/01location/rnaseq/03ouput/finally_expressed_sp_info.xlsx"
-    database_file = "/media/wanglab/caca/work_mechanism/new_file/00raw/Raw_database/Eu_peptide_database_customized_5.fa"
-    genome_file   = "/media/wanglab/caca/work_mechanism/new_file/00raw/Raw_database/Eu_genome.fasta"
-    out_cand = "/media/wanglab/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/output_candidates.csv"
-    # 1) 汇总 accession 覆盖信息
-    stats = filter_peptide_seq_cal_cov(peptide_file, database_file)
-    # 2) 多进程扫描并枚举候选
-    stats_update = run_scan_and_output(stats, genome_file, max_scan_nt=MAX_SCAN_NT, nproc=THREADS)
-    # 3) 输出 candidates 表
+    peptide_info = ""
+    hit_transcript_gtf = ""
+    genome_fasta = ""
+    out_cand = ""
+    db_path = ""
+    df = pd.read_excel(peptide_info, sheet_name="annotated")
+    records = df.to_dict("records")
+    stats = run_scan_and_output(records, hit_transcript_gtf, genome_fasta, db_path, max_scan_nt=MAX_SCAN_NT, nproc=THREADS)
     cand_rows = []
-    for it in stats_update:
-        base = {k: it[k] for k in it.keys() if k not in ("candidates")}
-        for rank, cand in enumerate(it.get("candidates", []), start=1):
-            cand_rows.append({**base, "rank": rank, **cand})
+    for it in stats:
+        base_item = {k: it[k] for k in it.keys() if k != "per_hit"}
+        for hit in it.get("per_hit", []):
+            base_hit = {
+                **base_item,
+                "hit_id": hit.get("hit_id"),
+                "chrom": hit.get("chrom"),
+                "tx_strand": hit.get("tx_strand"),
+                "tstart": hit.get("tstart"),
+                "tend": hit.get("tend"),
+                "hit_error": hit.get("error"),
+            }
+            for rank, cand in enumerate(hit.get("candidates", []), start=1):
+                cand_rows.append({**base_hit, "rank": rank, **cand})
     df_cand = pd.DataFrame(cand_rows)
-    df_cand.to_csv(out_cand, index=False)
+    df_cand.to_csv(out_cand, index=False)  
 if __name__ == "__main__":
     main()
