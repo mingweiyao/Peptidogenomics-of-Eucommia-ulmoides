@@ -537,10 +537,10 @@ import pandas as pd
 from Bio.Seq import Seq
 excel_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v7/candidates_scored.xlsx"
 transcript_fa = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/new_transcript/hit_transcripts.fa"
-candidate_trans_dna = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v7/test_candidate_trans_dna.fa"
-candidate_trans_pro = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v7/test_candidate_trans_pro.fa"
+candidate_trans_dna = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v7/candidate_trans_dna.fa"
+candidate_trans_pro = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v7/candidate_trans_pro.fa"
 transcript_dict = {rec.id: rec.seq for rec in SeqIO.parse(transcript_fa, "fasta")}
-df = pd.read_excel(excel_file, sheet_name="Sheet1")
+df = pd.read_excel(excel_file, sheet_name="finally")
 trans_dna = []
 trans_pro = []
 for _, row in df.iterrows():
@@ -552,7 +552,6 @@ for _, row in df.iterrows():
     gseq = transcript_dict[trans_id]
     target_seq_dna = gseq[start-1:end] if strand == "+" else Seq(gseq[start-1:end]).reverse_complement()
     target_seq_pro = target_seq_dna.translate()
-    if "*" in target_seq_pro: continue
     rec_dna = SeqRecord(Seq(target_seq_dna), id=candidate_key, description="")
     rec_pro = SeqRecord(Seq(target_seq_pro), id=candidate_key, description="")
     trans_dna.append(rec_dna)

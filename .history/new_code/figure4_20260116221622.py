@@ -530,35 +530,34 @@
 # if __name__ == "__main__":
 #     main()
 
-# 根据筛选的excel文件提取fasta和dna序列
-from Bio.SeqRecord import SeqRecord
-from Bio import SeqIO
-import pandas as pd
-from Bio.Seq import Seq
-excel_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v7/candidates_scored.xlsx"
-transcript_fa = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/new_transcript/hit_transcripts.fa"
-candidate_trans_dna = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v7/test_candidate_trans_dna.fa"
-candidate_trans_pro = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v7/test_candidate_trans_pro.fa"
-transcript_dict = {rec.id: rec.seq for rec in SeqIO.parse(transcript_fa, "fasta")}
-df = pd.read_excel(excel_file, sheet_name="Sheet1")
-trans_dna = []
-trans_pro = []
-for _, row in df.iterrows():
-    candidate_key = row['candidate_key']
-    trans_id = row['trans_id']
-    start = row['phy_start']
-    end = row['phy_end']
-    strand = row['strand']
-    gseq = transcript_dict[trans_id]
-    target_seq_dna = gseq[start-1:end] if strand == "+" else Seq(gseq[start-1:end]).reverse_complement()
-    target_seq_pro = target_seq_dna.translate()
-    if "*" in target_seq_pro: continue
-    rec_dna = SeqRecord(Seq(target_seq_dna), id=candidate_key, description="")
-    rec_pro = SeqRecord(Seq(target_seq_pro), id=candidate_key, description="")
-    trans_dna.append(rec_dna)
-    trans_pro.append(rec_pro)
-SeqIO.write(trans_dna, candidate_trans_dna, "fasta")
-SeqIO.write(trans_pro, candidate_trans_pro, "fasta")
+# # 根据筛选的excel文件提取fasta和dna序列
+# from Bio.SeqRecord import SeqRecord
+# from Bio import SeqIO
+# import pandas as pd
+# from Bio.Seq import Seq
+# excel_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v7/candidates_scored.xlsx"
+# transcript_fa = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/new_transcript/hit_transcripts.fa"
+# candidate_trans_dna = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v7/candidate_trans_dna.fa"
+# candidate_trans_pro = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v7/candidate_trans_pro.fa"
+# transcript_dict = {rec.id: rec.seq for rec in SeqIO.parse(transcript_fa, "fasta")}
+# df = pd.read_excel(excel_file, sheet_name="finally")
+# trans_dna = []
+# trans_pro = []
+# for _, row in df.iterrows():
+#     candidate_key = row['candidate_key']
+#     trans_id = row['trans_id']
+#     start = row['phy_start']
+#     end = row['phy_end']
+#     strand = row['strand']
+#     gseq = transcript_dict[trans_id]
+#     target_seq_dna = gseq[start-1:end] if strand == "+" else Seq(gseq[start-1:end]).reverse_complement()
+#     target_seq_pro = target_seq_dna.translate()
+#     rec_dna = SeqRecord(Seq(target_seq_dna), id=candidate_key, description="")
+#     rec_pro = SeqRecord(Seq(target_seq_pro), id=candidate_key, description="")
+#     trans_dna.append(rec_dna)
+#     trans_pro.append(rec_pro)
+# SeqIO.write(trans_dna, candidate_trans_dna, "fasta")
+# SeqIO.write(trans_pro, candidate_trans_pro, "fasta")
 
 # ==================== 画图 =====================
 # # figure1: pwm矩阵文件

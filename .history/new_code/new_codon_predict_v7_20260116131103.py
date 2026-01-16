@@ -7,14 +7,14 @@ import numpy as np
 # =========================================================
 # CONFIG
 # =========================================================
-OUT_DIR = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v7"
-INPUT_DIR = "/Volumes/caca/work_mechanism/new_file/02figure/Eu_genome_modified"
+OUT_DIR = r"F:\work_mechanism\new_file\02figure\figure4\codon\codon_prediction\codon_prediction_v7"
+INPUT_DIR = "F:/work_mechanism/new_file/02figure/Eu_genome_modified"
 CDS_FA = os.path.join(INPUT_DIR, "Eu_CDS.fasta")
 GENOME_FA = os.path.join(INPUT_DIR, "Eu_genome.fasta")
 GFF3_FA = os.path.join(INPUT_DIR, "GWHBISF00000000.gff")
-CANDIDATES_XLSX = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/new_transcript/hit_transcript_predict_orf.csv"
-TRANSCRIPT_FA = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/new_transcript/hit_transcripts_extra.fa"
-CODON_EFFICIENCY = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_efficiency.xlsx"
+CANDIDATES_XLSX = r"F:\work_mechanism\new_file\02figure\figure4\new_transcript\hit_transcript_predict_orf.csv"
+TRANSCRIPT_FA = r"F:\work_mechanism\new_file\02figure\figure4\new_transcript\hit_transcripts_extra.fa"
+CODON_EFFICIENCY = r"F:\work_mechanism\new_file\02figure\figure4\codon\codon_efficiency.xlsx"
 OUTPUT_TP_TN = os.path.join(OUT_DIR, "TP_TN_with_motif_columns.xlsx")
 OUT_XLSX = os.path.join(OUT_DIR, "candidates_scored.xlsx")
 SHEET_NAME = "hit_transcript_predict_orf"
