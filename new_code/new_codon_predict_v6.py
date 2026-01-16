@@ -10,15 +10,16 @@ from sklearn.linear_model import LogisticRegression
 # =========================================================
 # CONFIG
 # =========================================================
-INPUT_DIR = "/media/wanglab/caca/work_mechanism/new_file/02figure/Eu_genome_modified"
+INPUT_DIR = "F:/work_mechanism/new_file/02figure/Eu_genome_modified"
 CDS_FA = os.path.join(INPUT_DIR, "Eu_CDS.fasta")
 GENOME_FA = os.path.join(INPUT_DIR, "Eu_genome.fasta")
-CANDIDATES_XLSX = "/media/wanglab/caca/work_mechanism/new_file/02figure/figure4/codon/output_candidates.xlsx"
-CODON_EFFICIENCY = "/media/wanglab/caca/work_mechanism/new_file/02figure/figure4/codon/codon_efficiency.xlsx"
+TRANSCRIPT_FA = r"F:\work_mechanism\new_file\02figure\figure4\new_transcript\hit_transcripts_extra.fa"
+CANDIDATES_XLSX = r"F:\work_mechanism\new_file\02figure\figure4\new_transcript\hit_transcript_predict_orf.xlsx"
+CODON_EFFICIENCY = r"F:\work_mechanism\new_file\02figure\figure4\codon\codon_efficiency.xlsx"
 GFF3_FA = os.path.join(INPUT_DIR, "GWHBISF00000000.gff")
-OUT_DIR = "/media/wanglab/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v6"
+OUT_DIR = r"F:\work_mechanism\new_file\02figure\figure4\codon\codon_prediction\codon_prediction_v6"
 OUT_XLSX = os.path.join(OUT_DIR, "candidates_scored.xlsx")
-SHEET_NAME = "output_candidates"
+SHEET_NAME = "hit_transcript_predict_orf"
 # upstream window: [-100, 0) relative to codon first base (tis_pos0)
 UP_LEN = 100
 UP_START = 100
@@ -279,6 +280,7 @@ def score_candidates_excel(require_5utr=False):
     os.makedirs(OUT_DIR, exist_ok=True)
     # ---- 0) Load genome, codon_efficiency & CDS ----
     genome_dict = {rec.id: str(rec.seq).upper() for rec in SeqIO.parse(GENOME_FA, "fasta")}
+    transcript_dict = {rec.id: str(rec.seq).upper() for rec in SeqIO.parse(TRANSCRIPT_FA, "fasta")}
     codon_efficiency = parse_codon_file(CODON_EFFICIENCY)
     cds_dict = load_cds_fasta(CDS_FA, GFF3_FA, genome_dict, require_5utr=require_5utr)
     # ---- 1) Train TP LM + BG LM (3mer/5mer) ----
@@ -299,22 +301,24 @@ def score_candidates_excel(require_5utr=False):
     upstream_score = []
     codon_score = []
     for _, r in df_sp.iterrows():
-        chrom = str(r.get("chrom", ""))
+        tran_id = r['trans_id']
         strand = str(r.get("strand", ""))
         start = int(r.get("phy_start", -1))
         end = int(r.get("phy_end", -1))
+        trans_start = start + 100
+        trans_end = end + 100
         codon = r['codon']
         candidate_keys.append(make_candidate_key(r))
         mu = np.array(model[codon]['std']["mu"], float)
         sd = np.array(model[codon]['std']["sd"], float)
-        g = genome_dict[chrom]
+        g = transcript_dict[tran_id]
         if strand == "+":
-            left = start - (UP_START + 1)
-            right = start - 1
+            left = trans_start - (UP_START + 1)
+            right = trans_start - 1
             up = g[left:right] if (left >= 0 and right <= len(g)) else None
         else:
-            left = end
-            right = end + UP_START
+            left = trans_end
+            right = trans_end + UP_START
             up = str(Seq(g[left:right]).reverse_complement()) if (left >= 0 and right <= len(g)) else None
         if up is None or len(up) != UP_LEN or (not DNA_RE_100.fullmatch(up)):
             cu_fracs.append(np.nan); motif_scores.append(np.nan)
@@ -331,22 +335,28 @@ def score_candidates_excel(require_5utr=False):
         motif_scores.append(ms)
         upstream_score.append(score_base) 
         # codon and background
-        w = str(r.get("kozak_seq", "")).upper()[2:10]
-        codon_score.append(codon_efficiency[w])
-    df_sp["candidate_key"] = candidate_keys
+        w0 = str(r.get("kozak_seq", "")).upper()[2:10]
+        if DNA_RE.fullmatch(w0):
+            eff = codon_efficiency.get(w0)
+            if eff is not None and not pd.isna(eff):
+                codon_score.append(codon_efficiency[w0])
+            else:
+                codon_score.append(np.nan)
+        else:
+            codon_score.append(np.nan)
     df_sp["cu_fraction"] = cu_fracs
     df_sp["motif_score"] = motif_scores
     df_sp['upstream_score'] = upstream_score
     df_sp['codon_efficiency'] = codon_score
     df_sp["codon_rank"] = (
         df_sp
-        .groupby("accession")["codon_efficiency"]
+        .groupby("trans_id")["codon_efficiency"]
         .rank(method="min", ascending=False)
         .astype("Int64")
     )
     df_sp["upstream_rank"] = (
         df_sp
-        .groupby("accession")["upstream_score"]
+        .groupby("trans_id")["upstream_score"]
         .rank(method="min", ascending=False)
         .astype("Int64")
     )
@@ -379,6 +389,5 @@ def score_candidates_excel(require_5utr=False):
         write_lm_tsv(lm5, os.path.join(OUT_DIR, f"bg_{codon}_lm5.tsv"))
     print("[OK] wrote:", OUT_XLSX)
     print("[OK] artifacts in:", OUT_DIR)
-
 if __name__ == "__main__":
     score_candidates_excel(require_5utr=False)
