@@ -1,21 +1,35 @@
-# 根据group提取并筛选表达的sp
 import pandas as pd
-gene_expression_df = pd.read_csv(r"F:\work_mechanism\new_file\01location\rnaseq\03ouput\finally_expressed_sp_cpm.csv", index_col=0)
-tissue_mapping_df = pd.read_excel(r"D:\Desktop\Total_rna_seq.xlsx", sheet_name="extract")
-tissue_group_to_samples = (tissue_mapping_df.groupby(['Tissues', 'Group'])['Sample'].apply(list).to_dict())
-peptide_ids_by_tissue = {}
-for (tissue, group), samples in tissue_group_to_samples.items():
-    samples = [s for s in samples if s in gene_expression_df.columns]
-    group_expr = gene_expression_df.loc[:, samples]
-    group_mask = (group_expr >= 1).all(axis=1)
-    if tissue not in peptide_ids_by_tissue:
-        peptide_ids_by_tissue[tissue] = set()
-    peptide_ids_by_tissue[tissue].update(group_expr.index[group_mask].tolist())
-peptide_ids_by_tissue = {tissue: list(ids) for tissue, ids in peptide_ids_by_tissue.items()}
-max_length = max((len(ids) for ids in peptide_ids_by_tissue.values()), default=0)
-peptide_ids_df = pd.DataFrame({
-    tissue: ids + [None] * (max_length - len(ids))
-    for tissue, ids in peptide_ids_by_tissue.items()
-})
-output_excel_path = r"D:\Desktop\rnaseq_veen_leaf_location.xlsx"
-peptide_ids_df.to_excel(output_excel_path, index=False)
+import numpy as np
+input_file = r"F:\work_mechanism\new_file\02figure\figure4\SMD_analysis.xlsx"
+# Step 1: 读取文件
+id_df = pd.read_excel(input_file, sheet_name="ID")
+group_df = pd.read_excel(input_file, sheet_name="Group")
+quant_matrix_df = pd.read_excel(input_file, sheet_name="CPM")
+# Step 2: 提取表达量数据
+filter_df = quant_matrix_df[quant_matrix_df['ID'].isin(id_df['ID'])]
+# Step 3: 提取分组数据
+group = {}
+for _, row in group_df.iterrows():
+    if row['Group'] not in group:
+        group[row['Group']] = []
+    group[row['Group']].append(row['Sample'])
+# Step 4: 计算每组的均值和标准差
+group_stats = {}
+for group_name, samples in group.items():
+    group_expr = filter_df[samples]
+    group_mean = group_expr.mean(axis=1)
+    group_std = group_expr.std(axis=1)
+    group_stats[group_name] = (group_mean, group_std)
+# Step 5: 计算标准化差异（SMD）并追加到原始数据中
+temp_group1 = []
+for group1 in group_stats:
+    temp_group1.append(group1)
+    for group2 in group_stats:
+        if group2 not in temp_group1:
+            mean_diff = abs(group_stats[group1][0] - group_stats[group2][0])
+            pooled_std = np.sqrt((group_stats[group1][1]**2 + group_stats[group2][1]**2) / 2)
+            standardized_diff = mean_diff / pooled_std
+            column_name = f'SMD_{group1}_vs_{group2}'
+            filter_df[column_name] = standardized_diff
+output_file = r"F:\work_mechanism\new_file\02figure\figure4\SMD_output.xlsx"
+filter_df.to_excel(output_file, index=False)
