@@ -505,46 +505,47 @@
 # if __name__ == "__main__":
 #     main()
 
-# # 按照FC和Pvalue筛选表达基因
-# import pandas as pd
-# def filter_excel_by_log2fc_pvalue(input_excel, output_excel, log2fc_col="log2FC", 
-#                                   pvalue_col="PValue", log2fc_cutoff=1, pvalue_cutoff=0.05):
-#     xls = pd.ExcelFile(input_excel)
-#     result_dfs = []
-#     for sheet in xls.sheet_names:
-#         filtered = []
-#         df = pd.read_excel(xls, sheet_name=sheet)
-#         if log2fc_col not in df.columns or pvalue_col not in df.columns:
-#             print(f"[跳过] sheet '{sheet}' 缺少 {log2fc_col} 或 {pvalue_col}")
-#             continue
-#         # 转为数值，避免字符串/空值问题
-#         df[log2fc_col] = pd.to_numeric(df[log2fc_col], errors="coerce")
-#         df[pvalue_col] = pd.to_numeric(df[pvalue_col], errors="coerce")
-#         # 筛选条件
-#         df_f = df[(df[log2fc_col].abs() > log2fc_cutoff) & (df[pvalue_col] < pvalue_cutoff)].copy()
-#         if df_f.empty: continue
-#         filtered = df_f[["name", log2fc_col, pvalue_col]].copy()
-#         filtered["source_sheet"] = sheet
-#         result_dfs.append(filtered)
-#     if not result_dfs:
-#         print("没有任何 sheet 满足筛选条件")
-#         return
-#     final_df = pd.concat(result_dfs, ignore_index=True)
-#     # 写入新的 Excel
-#     final_df.to_excel(output_excel, index=False)
-#     print(f"筛选完成，共输出 {len(final_df)} 行")
-#     print(f"结果已写入: {output_excel}")
-# input_excel = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/deseq_analysis.xlsx"
-# output_excel = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/deseq_analysis_diff.xlsx"
-# filter_excel_by_log2fc_pvalue(input_excel, output_excel)
+# 按照FC和Pvalue筛选表达基因
+import pandas as pd
+def filter_excel_by_log2fc_pvalue(input_excel, output_excel, log2fc_col="log2FC", 
+                                  pvalue_col="PValue", log2fc_cutoff=1, pvalue_cutoff=0.05):
+    xls = pd.ExcelFile(input_excel)
+    result_dfs = []
+    for sheet in xls.sheet_names:
+        filtered = []
+        df = pd.read_excel(xls, sheet_name=sheet)
+        if log2fc_col not in df.columns or pvalue_col not in df.columns:
+            print(f"[跳过] sheet '{sheet}' 缺少 {log2fc_col} 或 {pvalue_col}")
+            continue
+        # 转为数值，避免字符串/空值问题
+        df[log2fc_col] = pd.to_numeric(df[log2fc_col], errors="coerce")
+        df[pvalue_col] = pd.to_numeric(df[pvalue_col], errors="coerce")
+        # 筛选条件
+        df_f = df[(df[log2fc_col].abs() > log2fc_cutoff) & (df[pvalue_col] < pvalue_cutoff)].copy()
+        if df_f.empty: continue
+        filtered = df_f[[log2fc_col, pvalue_col]].copy()
+        filtered["source_sheet"] = sheet
+        result_dfs.append(filtered)
+    if not result_dfs:
+        print("没有任何 sheet 满足筛选条件")
+        return
+    final_df = pd.concat(result_dfs, ignore_index=True)
+    # 写入新的 Excel
+    final_df.to_excel(output_excel, index=False)
+    print(f"筛选完成，共输出 {len(final_df)} 行")
+    print(f"结果已写入: {output_excel}")
+input_excel = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/deseq_analysis.xlsx"
+output_excel = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/deseq_analysis_diff.xlsx"
+filter_excel_by_log2fc_pvalue(input_excel, output_excel)
+
 
 # # TPM标准化
 # import os
 # import pandas as pd
 # import gffutils
-# GFF_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/codon/codon_prediction/codon_prediction_v7/sp_codon.gff"
-# COUNT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber_count.xlsx"
-# OUT_DIR = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/"
+# GFF_FILE = r"D:\Desktop\peptidemicro\00file\01figure\figure5\NCP_codon.gff"
+# COUNT_FILE = r"D:\Desktop\peptidemicro\00file\01figure\total_all_matrix.xlsx"
+# OUT_DIR = r"D:\Desktop\peptidemicro\00file\01figure"
 # def prepare_length_data(gff_file):
 #     db_path = gff_file + ".db"
 #     if not os.path.exists(db_path):
@@ -602,28 +603,28 @@
 # if __name__ == "__main__":
 #     length_df = prepare_length_data(GFF_FILE)
 #     count_df = read_counts(COUNT_FILE)
-#     normalize_tpm(count_df, length_df, os.path.join(OUT_DIR, "rubber_count_tpm.xlsx"))
+#     normalize_tpm(count_df, length_df, os.path.join(OUT_DIR, "total_all_matrix_tpm.xlsx"))
 
 # # 提取特定基因表达量
 # import pandas as pd
-# id_mapping_df = pd.read_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber.xlsx", sheet_name="Sheet2")
-# data_df = pd.read_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber_count_tpm.xlsx")
+# id_mapping_df = pd.read_excel(r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\rubber.xlsx", sheet_name="Sheet2")
+# data_df = pd.read_excel(r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Eu_tissue.xlsx")
 # mapped_ids = id_mapping_df['ID']
 # mapped_df = data_df[data_df['GeneID'].isin(mapped_ids)]
-# mapped_df.to_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber_count_tpm_filter.xlsx", index=False)
+# mapped_df.to_excel(r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Eu_tissue_mapped_gene.xlsx", index=False)
 
-# 替换ID
-import pandas as pd
-map_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber.xlsx"
-map_df = pd.read_excel(map_file, sheet_name="Sheet2")
-map_df = map_df[["ID", "name"]]
-id_to_name = dict(zip(map_df["name"], map_df["ID"]))
-data_file = "D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Eu_tissue_mapped_gene_pearson.xlsx"
-data_df = pd.read_excel(data_file, sheet_name="Sheet1")
-data_df["Var2"] = data_df["Var2"].map(id_to_name).fillna(data_df["Var2"])
-out_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Var2_replaced_with_name.xlsx"
-data_df.to_excel(out_file, index=False)
-print("替换完成，结果已保存为：", out_file)
+# # 替换ID
+# import pandas as pd
+# map_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\rubber.xlsx"
+# map_df = pd.read_excel(map_file, sheet_name="Sheet2")
+# map_df = map_df[["ID", "name"]]
+# id_to_name = dict(zip(map_df["name"], map_df["ID"]))
+# data_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Eu_tissue_mapped_gene_pearson.xlsx"
+# data_df = pd.read_excel(data_file, sheet_name="Sheet1")
+# data_df["Var2"] = data_df["Var2"].map(id_to_name).fillna(data_df["Var2"])
+# out_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Var2_replaced_with_name.xlsx"
+# data_df.to_excel(out_file, index=False)
+# print("替换完成，结果已保存为：", out_file)
 
 # # 提取|r|>0.8, p<0.05的基因的tpm表达量，然后计算相关性
 # import pandas as pd

@@ -538,92 +538,92 @@
 # output_excel = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/deseq_analysis_diff.xlsx"
 # filter_excel_by_log2fc_pvalue(input_excel, output_excel)
 
-# # TPM标准化
-# import os
-# import pandas as pd
-# import gffutils
-# GFF_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/codon/codon_prediction/codon_prediction_v7/sp_codon.gff"
-# COUNT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber_count.xlsx"
-# OUT_DIR = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/"
-# def prepare_length_data(gff_file):
-#     db_path = gff_file + ".db"
-#     if not os.path.exists(db_path):
-#         print("🔄 正在创建 GFF 数据库...")
-#         gffutils.create_db(
-#             gff_file,
-#             dbfn=db_path,
-#             force=True,
-#             keep_order=True,
-#             merge_strategy="merge",
-#             id_spec={"gene": "ID", "mRNA": "ID", "CDS": "Parent"},
-#             disable_infer_genes=True,
-#             disable_infer_transcripts=True
-#         )
-#     db = gffutils.FeatureDB(db_path)
-#     gene_lengths = {}
-#     for gene in db.features_of_type("gene"):
-#         total_length = 0
-#         for mrna in db.children(gene, featuretype="mRNA", order_by="start"):
-#             exons = list(db.children(mrna, featuretype="exon", order_by="start"))
-#             if exons:
-#                 mrna_len = sum(e.end - e.start + 1 for e in exons)
-#                 total_length += mrna_len
-#         if total_length > 0:
-#             gene_id = gene.id.replace("evm.model.", "evm.TU.")
-#             gene_lengths[gene_id] = total_length
-#     length_df = pd.DataFrame(
-#         gene_lengths.items(),
-#         columns=["GeneID", "length"]
-#     )
-#     out_len = os.path.join(OUT_DIR, "gene_lengths.csv")
-#     length_df.to_csv(out_len, index=False)
-#     print(f"✅ 基因长度表已生成：{out_len}")
-#     return length_df
-# def read_counts(count_file):
-#     if count_file.lower().endswith(".csv"):
-#         df = pd.read_csv(count_file)
-#     else:
-#         df = pd.read_excel(count_file)
-#     if df.columns[0] != "GeneID":
-#         df = df.rename(columns={df.columns[0]: "GeneID"})
-#     return df
-# def normalize_tpm(count_df, length_df, output_file):
-#     df = pd.merge(count_df, length_df, on='GeneID', how='inner')
-#     df = df[df['length'] > 0]
-#     sample_cols = [col for col in df.columns if col not in ['GeneID', 'length']]
-#     tpm_data = {}
-#     for sample in sample_cols:
-#         rpk = (df[sample] * 10**3) / df['length']
-#         per_million_scaling_factor = rpk.sum() / 10**6
-#         tpm = rpk / per_million_scaling_factor
-#         tpm_data[sample] = tpm
-#     tpm_df = pd.concat([df[['GeneID']], pd.DataFrame(tpm_data)], axis=1)
-#     tpm_df.to_excel(output_file, index=False)
-# if __name__ == "__main__":
-#     length_df = prepare_length_data(GFF_FILE)
-#     count_df = read_counts(COUNT_FILE)
-#     normalize_tpm(count_df, length_df, os.path.join(OUT_DIR, "rubber_count_tpm.xlsx"))
+# TPM标准化
+import os
+import pandas as pd
+import gffutils
+GFF_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/codon/codon_prediction/codon_prediction_v7/sp_codon.gff"
+COUNT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber_count.xlsx"
+OUT_DIR = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/"
+def prepare_length_data(gff_file):
+    db_path = gff_file + ".db"
+    if not os.path.exists(db_path):
+        print("🔄 正在创建 GFF 数据库...")
+        gffutils.create_db(
+            gff_file,
+            dbfn=db_path,
+            force=True,
+            keep_order=True,
+            merge_strategy="merge",
+            id_spec={"gene": "ID", "mRNA": "ID", "CDS": "Parent"},
+            disable_infer_genes=True,
+            disable_infer_transcripts=True
+        )
+    db = gffutils.FeatureDB(db_path)
+    gene_lengths = {}
+    for gene in db.features_of_type("gene"):
+        total_length = 0
+        for mrna in db.children(gene, featuretype="mRNA", order_by="start"):
+            exons = list(db.children(mrna, featuretype="exon", order_by="start"))
+            if exons:
+                mrna_len = sum(e.end - e.start + 1 for e in exons)
+                total_length += mrna_len
+        if total_length > 0:
+            gene_id = gene.id.replace("evm.model.", "evm.TU.")
+            gene_lengths[gene_id] = total_length
+    length_df = pd.DataFrame(
+        gene_lengths.items(),
+        columns=["GeneID", "length"]
+    )
+    out_len = os.path.join(OUT_DIR, "gene_lengths.csv")
+    length_df.to_csv(out_len, index=False)
+    print(f"✅ 基因长度表已生成：{out_len}")
+    return length_df
+def read_counts(count_file):
+    if count_file.lower().endswith(".csv"):
+        df = pd.read_csv(count_file)
+    else:
+        df = pd.read_excel(count_file)
+    if df.columns[0] != "GeneID":
+        df = df.rename(columns={df.columns[0]: "GeneID"})
+    return df
+def normalize_tpm(count_df, length_df, output_file):
+    df = pd.merge(count_df, length_df, on='GeneID', how='inner')
+    df = df[df['length'] > 0]
+    sample_cols = [col for col in df.columns if col not in ['GeneID', 'length']]
+    tpm_data = {}
+    for sample in sample_cols:
+        rpk = (df[sample] * 10**3) / df['length']
+        per_million_scaling_factor = rpk.sum() / 10**6
+        tpm = rpk / per_million_scaling_factor
+        tpm_data[sample] = tpm
+    tpm_df = pd.concat([df[['GeneID']], pd.DataFrame(tpm_data)], axis=1)
+    tpm_df.to_excel(output_file, index=False)
+if __name__ == "__main__":
+    length_df = prepare_length_data(GFF_FILE)
+    count_df = read_counts(COUNT_FILE)
+    normalize_tpm(count_df, length_df, os.path.join(OUT_DIR, "deseq_count_tpm.xlsx"))
 
 # # 提取特定基因表达量
 # import pandas as pd
-# id_mapping_df = pd.read_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber.xlsx", sheet_name="Sheet2")
-# data_df = pd.read_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber_count_tpm.xlsx")
+# id_mapping_df = pd.read_excel(r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\rubber.xlsx", sheet_name="Sheet2")
+# data_df = pd.read_excel(r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Eu_tissue.xlsx")
 # mapped_ids = id_mapping_df['ID']
 # mapped_df = data_df[data_df['GeneID'].isin(mapped_ids)]
-# mapped_df.to_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber_count_tpm_filter.xlsx", index=False)
+# mapped_df.to_excel(r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Eu_tissue_mapped_gene.xlsx", index=False)
 
-# 替换ID
-import pandas as pd
-map_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber.xlsx"
-map_df = pd.read_excel(map_file, sheet_name="Sheet2")
-map_df = map_df[["ID", "name"]]
-id_to_name = dict(zip(map_df["name"], map_df["ID"]))
-data_file = "D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Eu_tissue_mapped_gene_pearson.xlsx"
-data_df = pd.read_excel(data_file, sheet_name="Sheet1")
-data_df["Var2"] = data_df["Var2"].map(id_to_name).fillna(data_df["Var2"])
-out_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Var2_replaced_with_name.xlsx"
-data_df.to_excel(out_file, index=False)
-print("替换完成，结果已保存为：", out_file)
+# # 替换ID
+# import pandas as pd
+# map_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\rubber.xlsx"
+# map_df = pd.read_excel(map_file, sheet_name="Sheet2")
+# map_df = map_df[["ID", "name"]]
+# id_to_name = dict(zip(map_df["name"], map_df["ID"]))
+# data_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Eu_tissue_mapped_gene_pearson.xlsx"
+# data_df = pd.read_excel(data_file, sheet_name="Sheet1")
+# data_df["Var2"] = data_df["Var2"].map(id_to_name).fillna(data_df["Var2"])
+# out_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Var2_replaced_with_name.xlsx"
+# data_df.to_excel(out_file, index=False)
+# print("替换完成，结果已保存为：", out_file)
 
 # # 提取|r|>0.8, p<0.05的基因的tpm表达量，然后计算相关性
 # import pandas as pd
