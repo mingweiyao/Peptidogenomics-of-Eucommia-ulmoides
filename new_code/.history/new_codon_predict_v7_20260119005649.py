@@ -196,7 +196,7 @@ def score_candidates_excel():
             motif_cols[m].append(mc.get(m, np.nan))
         # codon and background
         codon = r['codon']
-        kozak_seq = str(r['kozak_seq'])
+        kozak_seq = r['kozak_seq']
         if not DNA_RE.fullmatch(kozak_seq):
             codon_score.append(np.nan)
             continue

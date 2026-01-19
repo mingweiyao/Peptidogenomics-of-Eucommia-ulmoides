@@ -195,16 +195,12 @@ def score_candidates_excel():
         for m in MOTIFS_DNA:
             motif_cols[m].append(mc.get(m, np.nan))
         # codon and background
-        codon = r['codon']
-        kozak_seq = str(r['kozak_seq'])
-        if not DNA_RE.fullmatch(kozak_seq):
-            codon_score.append(np.nan)
-            continue
-        if codon == "ATG":
-            eff = codon_efficiency.get(kozak_seq[:11])
+        w0 = str(r.get("kozak_seq", "")).upper()[2:10]
+        if DNA_RE.fullmatch(w0):
+            eff = codon_efficiency.get(w0)
+            codon_score.append(eff if (eff is not None and not pd.isna(eff)) else np.nan)
         else:
-            eff = codon_efficiency.get(kozak_seq[2:10])
-        codon_score.append(eff)
+            codon_score.append(np.nan)
     df_sp["candidate_key"] = candidate_keys
     df_sp["cu_fraction"] = cu_fracs
     for m in MOTIFS_DNA:

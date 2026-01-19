@@ -340,7 +340,7 @@
 #             genome_start, genome_start_i = mapper_gtf_genome(ps)
 #             genome_end, genome_end_i = mapper_gtf_genome(pe)
 #             if genome_start_i == genome_end_i:
-#                 c['cross_exon'] = f"{genome_start}-{genome_end}"
+#                 c['cross_exon'] = (genome_start, genome_end)
 #             else:
 #                 c['cross_exon'] = ";".join(f"{exons_coords[j][0]}-{exons_coords[j][1]}" for j in range(genome_start_i, genome_end_i + 1))     
 #     item['candidates'] = candidates
@@ -372,99 +372,159 @@
 # if __name__ == "__main__":
 #     main()
 
-# # 根据密码子预测的转录本定量并生成 GFF 文件
-# # 将Excel中的基因坐标转换为GFF3格式：后续GFF文件生成以此代码为参考
-# from datetime import datetime
+# 根据密码子预测的转录本定量并生成 GFF 文件
+# 将Excel中的基因坐标转换为GFF3格式：后续GFF文件生成以此代码为参考
+from datetime import datetime
+import pandas as pd
+def parse_cross_exon(cross_exon_value):
+    s = str(cross_exon_value).strip()
+    exon_coords = []
+    for block in s.split(";"):
+        block = block.strip()
+        a, b = block.split(", ", 1)
+        a, b = int(a), int(b)
+        if a > b: a, b = b, a
+        exon_coords.append((a, b))
+    return exon_coords
+def select_longest_by_trans_id_frame(df):
+    required = ["trans_id_frame", "phy_start", "phy_end"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"缺少用于筛选的列: {', '.join(missing)}")
+    d = df.copy()
+    d["phy_start"] = pd.to_numeric(d["phy_start"], errors="coerce")
+    d["phy_end"] = pd.to_numeric(d["phy_end"], errors="coerce")
+    d = d.dropna(subset=["trans_id_frame", "phy_start", "phy_end"])
+    d["aa_len"] = (d["phy_end"] - d["phy_start"] + 1) / 3
+    idx = d.groupby("trans_id_frame", sort=False)["aa_len"].idxmax()
+    d_best = d.loc[idx].copy()
+    return d_best
+def excel_to_gff3(df, output_gff, source="EuNCP"):
+    required_columns = ['ID', 'strand', 'chrom', 'cross_exon']
+    missing_cols = [col for col in required_columns if col not in df.columns]
+    if missing_cols:
+        print(f"错误: 缺少必要的列: {', '.join(missing_cols)}")
+        return
+    gff_header = f"""##gff-version 3
+##date {datetime.now().strftime('%Y-%m-%d')}
+##source {source}
+##genome-build v1.0
+"""
+    gff_lines = []
+    used_ids = set() 
+    for idx, row in df.iterrows():
+        seqid = str(row['chrom']).strip()
+        strand = str(row['strand']).strip()
+        if strand not in ['+', '-']: strand = '.'
+        gene_id = str(row['ID']).strip()
+        if gene_id == "" or gene_id.lower() == "nan": continue
+        exon_coords = parse_cross_exon(row['cross_exon'])
+        start = min(s for s, e in exon_coords)
+        end = max(e for s, e in exon_coords)
+        base_gene_id = gene_id
+        n = 1
+        while gene_id in used_ids:
+            n += 1
+            gene_id = f"{base_gene_id}_{n}"
+        used_ids.add(gene_id)
+        gene_line = (
+            f"{seqid}\t{source}\tgene\t{start}\t{end}\t.\t{strand}\t.\t"
+            f"ID={gene_id};Name={gene_id}"
+        )
+        gff_lines.append(gene_line)
+        mrna_id = f"{gene_id}.t1"
+        mrna_line = (
+            f"{seqid}\t{source}\tmRNA\t{start}\t{end}\t.\t{strand}\t.\t"
+            f"ID={mrna_id};Parent={gene_id};product=predicted_protein"
+        )
+        gff_lines.append(mrna_line)
+        for i, (exon_start, exon_end) in enumerate(exon_coords, start=1):
+            exon_id = f"{mrna_id}.exon{i}"
+            exon_line = (
+                f"{seqid}\t{source}\texon\t{exon_start}\t{exon_end}\t.\t{strand}\t.\t"
+                f"ID={exon_id};Parent={mrna_id}"
+            )
+            gff_lines.append(exon_line)
+            cds_id = f"{mrna_id}.cds{i}"
+            cds_line = (
+                f"{seqid}\t{source}\tCDS\t{exon_start}\t{exon_end}\t.\t{strand}\t0\t"
+                f"ID={cds_id};Parent={mrna_id}"
+            )
+            gff_lines.append(cds_line)
+    try:
+        with open(output_gff, 'w', encoding='utf-8') as f:
+            f.write(gff_header)
+            f.write("\n".join(gff_lines))
+            f.write("\n")  # ✅ 修正：文件末尾补换行更稳
+        print(f"成功生成GFF3文件: {output_gff}")
+        print(f"转换了 {len(df)} 条记录（空ID已跳过），共生成 {len(gff_lines)} 行GFF记录")
+    except Exception as e:
+        print(f"写入GFF文件失败: {e}")
+excel_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/codon/codon_prediction/codon_prediction_v7/candidates_scored.xlsx"
+output_gff = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/codon/codon_prediction/codon_prediction_v7/sp_codon.gff"
+df = pd.read_excel(excel_file)
+df_best = select_longest_by_trans_id_frame(df)
+excel_to_gff3(df_best, output_gff)
+
+
+
+
+
+# # 筛选肽基因与基因完全不重叠的候选肽基因
 # import pandas as pd
-# def parse_cross_exon(cross_exon_value):
-#     s = str(cross_exon_value).strip()
-#     exon_coords = []
-#     for block in s.split(";"):
-#         block = block.strip()
-#         a, b = block.split("-", 1)
-#         a, b = int(a), int(b)
-#         if a > b: a, b = b, a
-#         exon_coords.append((a, b))
-#     return exon_coords
-# def select_longest_by_trans_id_frame(df):
-#     required = ["trans_id_frame", "phy_start", "phy_end"]
-#     missing = [c for c in required if c not in df.columns]
-#     if missing:
-#         raise ValueError(f"缺少用于筛选的列: {', '.join(missing)}")
-#     d = df.copy()
-#     d["phy_start"] = pd.to_numeric(d["phy_start"], errors="coerce")
-#     d["phy_end"] = pd.to_numeric(d["phy_end"], errors="coerce")
-#     d = d.dropna(subset=["trans_id_frame", "phy_start", "phy_end"])
-#     d["aa_len"] = (d["phy_end"] - d["phy_start"] + 1) / 3
-#     idx = d.groupby("trans_id_frame", sort=False)["aa_len"].idxmax()
-#     d_best = d.loc[idx].copy()
-#     return d_best
-# def excel_to_gff3(df, output_gff, source="EuNCP"):
-#     required_columns = ['ID', 'strand', 'chrom', 'cross_exon']
-#     missing_cols = [col for col in required_columns if col not in df.columns]
-#     if missing_cols:
-#         print(f"错误: 缺少必要的列: {', '.join(missing_cols)}")
-#         return
-#     gff_header = f"""##gff-version 3
-# ##date {datetime.now().strftime('%Y-%m-%d')}
-# ##source {source}
-# ##genome-build v1.0
-# """
-#     gff_lines = []
-#     used_ids = set() 
-#     for idx, row in df.iterrows():
-#         seqid = str(row['chrom']).strip()
-#         strand = str(row['strand']).strip()
-#         if strand not in ['+', '-']: strand = '.'
-#         gene_id = str(row['ID']).strip()
-#         if gene_id == "" or gene_id.lower() == "nan": continue
-#         exon_coords = parse_cross_exon(row['cross_exon'])
-#         start = min(s for s, e in exon_coords)
-#         end = max(e for s, e in exon_coords)
-#         base_gene_id = gene_id
-#         n = 1
-#         while gene_id in used_ids:
-#             n += 1
-#             gene_id = f"{base_gene_id}_{n}"
-#         used_ids.add(gene_id)
-#         gene_line = (
-#             f"{seqid}\t{source}\tgene\t{start}\t{end}\t.\t{strand}\t.\t"
-#             f"ID={gene_id};Name={gene_id}"
-#         )
-#         gff_lines.append(gene_line)
-#         mrna_id = f"{gene_id}.t1"
-#         mrna_line = (
-#             f"{seqid}\t{source}\tmRNA\t{start}\t{end}\t.\t{strand}\t.\t"
-#             f"ID={mrna_id};Parent={gene_id};product=predicted_protein"
-#         )
-#         gff_lines.append(mrna_line)
-#         for i, (exon_start, exon_end) in enumerate(exon_coords, start=1):
-#             exon_id = f"{mrna_id}.exon{i}"
-#             exon_line = (
-#                 f"{seqid}\t{source}\texon\t{exon_start}\t{exon_end}\t.\t{strand}\t.\t"
-#                 f"ID={exon_id};Parent={mrna_id}"
-#             )
-#             gff_lines.append(exon_line)
-#             cds_id = f"{mrna_id}.cds{i}"
-#             cds_line = (
-#                 f"{seqid}\t{source}\tCDS\t{exon_start}\t{exon_end}\t.\t{strand}\t0\t"
-#                 f"ID={cds_id};Parent={mrna_id}"
-#             )
-#             gff_lines.append(cds_line)
-#     try:
-#         with open(output_gff, 'w', encoding='utf-8') as f:
-#             f.write(gff_header)
-#             f.write("\n".join(gff_lines))
-#             f.write("\n")  # ✅ 修正：文件末尾补换行更稳
-#         print(f"成功生成GFF3文件: {output_gff}")
-#         print(f"转换了 {len(df)} 条记录（空ID已跳过），共生成 {len(gff_lines)} 行GFF记录")
-#     except Exception as e:
-#         print(f"写入GFF文件失败: {e}")
-# excel_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/codon/codon_prediction/codon_prediction_v7/candidates_scored.xlsx"
-# output_gff = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/codon/codon_prediction/codon_prediction_v7/EuNCP_trans.gff"
-# df = pd.read_excel(excel_file)
-# df_best = select_longest_by_trans_id_frame(df)
-# excel_to_gff3(df_best, output_gff)
+# from collections import defaultdict
+# def intervals_overlap_closed(a_start, a_end, b_start, b_end):
+#     return max(a_start, b_start) <= min(a_end, b_end)
+# def build_gene_buckets(gene_df):
+#     buckets = defaultdict(list)
+#     for _, g in gene_df.iterrows():
+#         chrom = str(g["chrom"])
+#         s = int(g["start"])
+#         e = int(g["end"])
+#         if s > e:
+#             s, e = e, s
+#         buckets[chrom].append((s, e))
+#     return buckets
+# def row_has_overlap_with_any_gene(row, gene_buckets):
+#     chrom = str(row["chrom"])
+#     s = int(row["phy_start"])
+#     e = int(row["phy_end"])
+#     if s > e:
+#         s, e = e, s
+#     intervals = gene_buckets.get((chrom), [])
+#     for gs, ge in intervals:
+#         if intervals_overlap_closed(s, e, gs, ge):
+#             return True
+#     return False
+# def main(excel_path, sheet1_name, sheet2_name, out_path):
+#     gene_df = pd.read_excel(excel_path, sheet_name=sheet1_name, engine="openpyxl")
+#     s2 = pd.read_excel(excel_path, sheet_name=sheet2_name, engine="openpyxl")
+#     gene_buckets = build_gene_buckets(gene_df)
+#     s2 = s2.copy()
+#     s2["_overlap_with_gene"] = s2.apply(lambda r: row_has_overlap_with_any_gene(r, gene_buckets), axis=1)
+#     s2["_no_overlap_with_gene"] = ~s2["_overlap_with_gene"]
+#     g = s2.groupby("accession")["_no_overlap_with_gene"] 
+#     acc_all_no = set(g.all()[lambda x: x].index)
+#     acc_any_no = set(g.any()[lambda x: x].index)
+#     out_task1 = s2[s2["accession"].isin(acc_all_no)].drop(columns=["_overlap_with_gene", "_no_overlap_with_gene"])
+#     out_task2 = s2[s2["accession"].isin(acc_any_no)].drop(columns=["_overlap_with_gene", "_no_overlap_with_gene"])
+#     tmp = s2[s2["accession"].isin(acc_all_no)].copy()
+#     tmp["total_score"] = pd.to_numeric(tmp["total_score"], errors="coerce")
+#     best_rows = tmp.sort_values(["accession", "total_score"], ascending=[True, False]) \
+#                    .drop_duplicates(subset=["accession"], keep="first") \
+#                    .drop(columns=["_overlap_with_gene", "_no_overlap_with_gene"], errors="ignore")
+#     with pd.ExcelWriter(out_path, engine="openpyxl") as w:
+#         out_task1.to_excel(w, sheet_name="task1_all_no_overlap", index=False)
+#         out_task2.to_excel(w, sheet_name="task2_any_no_overlap", index=False)
+#         best_rows.to_excel(w, sheet_name="task1_best_total_score", index=False)
+# if __name__ == "__main__":
+#     main(
+#         excel_path=r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\output_candidates.xlsx",
+#         sheet1_name="gene_coor",
+#         sheet2_name="output_candidates",
+#         out_path=r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\output_candidates_filtered.xlsx",
+#     )
+
 
 # # 合并文件
 # import pandas as pd

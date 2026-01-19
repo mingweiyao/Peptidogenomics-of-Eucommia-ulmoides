@@ -7,14 +7,14 @@ import numpy as np
 # =========================================================
 # CONFIG
 # =========================================================
-OUT_DIR = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/codon/codon_prediction/codon_prediction_v7"
+OUT_DIR = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_prediction/codon_prediction_v7"
 INPUT_DIR = "/Volumes/caca/work_mechanism/new_file/02figure/Eu_genome_modified"
 CDS_FA = os.path.join(INPUT_DIR, "Eu_CDS.fasta")
 GENOME_FA = os.path.join(INPUT_DIR, "Eu_genome.fasta")
 GFF3_FA = os.path.join(INPUT_DIR, "GWHBISF00000000.gff")
-CANDIDATES_XLSX = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/new_transcript/hit_transcript_predict_orf.csv"
-TRANSCRIPT_FA = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/new_transcript/hit_transcripts_extra.fa"
-CODON_EFFICIENCY = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/codon/codon_efficiency.xlsx"
+CANDIDATES_XLSX = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/new_transcript/hit_transcript_predict_orf.csv"
+TRANSCRIPT_FA = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/new_transcript/hit_transcripts_extra.fa"
+CODON_EFFICIENCY = "/Volumes/caca/work_mechanism/new_file/02figure/figure4/codon/codon_efficiency.xlsx"
 OUTPUT_TP_TN = os.path.join(OUT_DIR, "TP_TN_with_motif_columns.xlsx")
 OUT_XLSX = os.path.join(OUT_DIR, "candidates_scored.xlsx")
 SHEET_NAME = "hit_transcript_predict_orf"
@@ -195,16 +195,12 @@ def score_candidates_excel():
         for m in MOTIFS_DNA:
             motif_cols[m].append(mc.get(m, np.nan))
         # codon and background
-        codon = r['codon']
-        kozak_seq = str(r['kozak_seq'])
-        if not DNA_RE.fullmatch(kozak_seq):
-            codon_score.append(np.nan)
-            continue
-        if codon == "ATG":
-            eff = codon_efficiency.get(kozak_seq[:11])
+        w0 = str(r.get("kozak_seq", "")).upper()[2:10]
+        if DNA_RE.fullmatch(w0):
+            eff = codon_efficiency.get(w0)
+            codon_score.append(eff if (eff is not None and not pd.isna(eff)) else np.nan)
         else:
-            eff = codon_efficiency.get(kozak_seq[2:10])
-        codon_score.append(eff)
+            codon_score.append(np.nan)
     df_sp["candidate_key"] = candidate_keys
     df_sp["cu_fraction"] = cu_fracs
     for m in MOTIFS_DNA:
