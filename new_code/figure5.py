@@ -612,33 +612,33 @@
 # mapped_df = data_df[data_df['GeneID'].isin(mapped_ids)]
 # mapped_df.to_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber_count_tpm_filter.xlsx", index=False)
 
-# 替换ID
-import pandas as pd
-map_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber.xlsx"
-map_df = pd.read_excel(map_file, sheet_name="Sheet2")
-map_df = map_df[["ID", "name"]]
-id_to_name = dict(zip(map_df["name"], map_df["ID"]))
-data_file = "D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Eu_tissue_mapped_gene_pearson.xlsx"
-data_df = pd.read_excel(data_file, sheet_name="Sheet1")
-data_df["Var2"] = data_df["Var2"].map(id_to_name).fillna(data_df["Var2"])
-out_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Var2_replaced_with_name.xlsx"
-data_df.to_excel(out_file, index=False)
-print("替换完成，结果已保存为：", out_file)
+# # 替换ID
+# import pandas as pd
+# map_file = r"F:\work_mechanism\new_file\02figure\figure5\rubber\rubber\rubber.xlsx"
+# map_df = pd.read_excel(map_file, sheet_name="Sheet2")
+# map_df = map_df[["ID", "name"]]
+# id_to_name = dict(zip(map_df["ID"], map_df["name"]))
+# data_file = r"F:\work_mechanism\new_file\02figure\figure5\rubber\Eu_tissue_mapped_gene_pearson.xlsx"
+# data_df = pd.read_excel(data_file, sheet_name="Sheet1")
+# data_df["Var1"] = data_df["Var1"].map(id_to_name).fillna(data_df["Var1"])
+# out_file = r"F:\work_mechanism\new_file\02figure\figure5\rubber\Var2_replaced_with_name.xlsx"
+# data_df.to_excel(out_file, index=False)
+# print("替换完成，结果已保存为：", out_file)
 
 # # 提取|r|>0.8, p<0.05的基因的tpm表达量，然后计算相关性
 # import pandas as pd
-# id_mapping_df = pd.read_excel("/Volumes/caca/work_mechanism/figure5/rubber/Eu_tissue_mapped_gene_pearson.xlsx", sheet_name="Sheet2")
-# data_df = pd.read_excel("/Volumes/caca/work_mechanism/figure5/rubber/Eu_tissue.xlsx")
+# id_mapping_df = pd.read_excel(r"F:\work_mechanism\new_file\02figure\figure5\rubber\Eu_tissue_mapped_gene_pearson.xlsx", sheet_name="Sheet2")
+# data_df = pd.read_excel(r"F:\work_mechanism\new_file\02figure\figure5\rubber\rubber\correlation\rubber_count_tpm_filter.xlsx", sheet_name="Sheet1")
 # mapped_ids = id_mapping_df['ID']
 # mapped_df = data_df[data_df['GeneID'].isin(mapped_ids)]
-# mapped_df.to_excel("/Volumes/caca/work_mechanism/figure5/rubber/Eu_tissue_mapped_gene_pearson_tpm.xlsx", index=False)
+# mapped_df.to_excel(r"F:\work_mechanism\new_file\02figure\figure5\rubber\Eu_tissue_mapped_gene_pearson_tpm.xlsx", index=False)
 
 # # 提取不同Group的量
 # import pandas as pd
-# IN_FILE = "/Volumes/caca/work_mechanism/figure5/rubber/Eu_tissue_mapped_gene_pearson.xlsx"
-# OUT_FILE = "/Volumes/caca/work_mechanism/figure5/rubber/Eu_tissue_mapped_gene_pearson_group.xlsx"
+# IN_FILE = r"F:\work_mechanism\new_file\02figure\figure5\rubber\Eu_tissue_mapped_gene_pearson.xlsx"
+# OUT_FILE = r"F:\work_mechanism\new_file\02figure\figure5\rubber\Eu_tissue_mapped_gene_pearson_group.xlsx"
 # ID_SHEET = "id_group"
-# DATA_SHEET = "Sheet1"
+# DATA_SHEET = "filter_0.8"
 # def unique_keep_order(seq):
 #     seen = set()
 #     out = []
@@ -651,21 +651,21 @@ print("替换完成，结果已保存为：", out_file)
 #     return out
 # def main():
 #     id_df = pd.read_excel(IN_FILE, sheet_name=ID_SHEET)
-#     id_df = id_df[["Var2", "Group"]].dropna(subset=["Var2", "Group"])
-#     var2_to_group = dict(zip(id_df["Var2"], id_df["Group"]))
+#     id_df = id_df[["Var1", "Group"]].dropna(subset=["Var1", "Group"])
+#     var2_to_group = dict(zip(id_df["Var1"], id_df["Group"]))
 #     df = pd.read_excel(IN_FILE, sheet_name=DATA_SHEET)
 #     df = df[["Var1", "Var2"]].dropna(subset=["Var1", "Var2"])
-#     df["Group"] = df["Var2"].map(var2_to_group)
+#     df["Group"] = df["Var1"].map(var2_to_group)
 #     unmapped = df[df["Group"].isna()].copy()
 #     df_mapped = df.dropna(subset=["Group"]).copy()
 #     grouped = (
-#         df_mapped.groupby("Group")["Var1"]
+#         df_mapped.groupby("Group")["Var2"]
 #         .apply(lambda s: unique_keep_order(s.tolist()))
 #         .to_dict()
 #     )
 #     out_df = pd.DataFrame({g: pd.Series(v) for g, v in grouped.items()})
 #     with pd.ExcelWriter(OUT_FILE, engine="openpyxl") as writer:
-#         out_df.to_excel(writer, sheet_name="Group_to_Var1", index=False)
+#         out_df.to_excel(writer, sheet_name="Group_to_Var2", index=False)
 #         if not unmapped.empty:
 #             unmapped.to_excel(writer, sheet_name="Unmapped", index=False)
 # if __name__ == "__main__":
@@ -675,12 +675,12 @@ print("替换完成，结果已保存为：", out_file)
 # import os
 # import re
 # import pandas as pd
-# IN_FILE = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\Eu_tissue_mapped_gene_pearson.xlsx"
-# PEARSON_FILE = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\pearson_r_p.xlsx"
-# PEARSON_SHEET = "P"
-# OUT_DIR = r"D:\Desktop\peptidemicro\00file\01figure\figure5\rubber\group_pearson_outputs_P"
+# IN_FILE = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\Eu_tissue_mapped_gene_pearson.xlsx"
+# PEARSON_FILE = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\pearson_r_p.xlsx"
+# PEARSON_SHEET = "R"
+# OUT_DIR = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\group_pearson_output_R"
 # ID_SHEET = "id_group"
-# DATA_SHEET = "Sheet1"
+# DATA_SHEET = "filter_0.8"
 # def sanitize_filename(name: str) -> str:
 #     """清理 group 名称用于文件名"""
 #     name = str(name)
@@ -719,7 +719,9 @@ print("替换完成，结果已保存为：", out_file)
 #         out_name = sanitize_filename(group)
 #         out_path = os.path.join(OUT_DIR, f"{out_name}.xlsx")
 #         with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
-#             submat.to_excel(writer, sheet_name="pearson_submatrix")
+#             submat_to_write = submat.copy()
+#             submat_to_write.index = submat_to_write.index.astype(str).str.replace("EuNCP_", "", regex=False)
+#             submat_to_write.to_excel(writer, sheet_name="pearson_submatrix")
 #             sub.to_excel(writer, sheet_name="pairs_Var2_Var1", index=False)
 #             missing_var1 = [x for x in var1_list if x not in pearson.index]
 #             missing_var2_1 = [x for x in var2_1_list if x not in pearson.columns]
@@ -741,6 +743,109 @@ print("替换完成，结果已保存为：", out_file)
 #     summary_df.to_excel(summary_path, index=False)
 # if __name__ == "__main__":
 #     main()
+
+# import os
+# from pathlib import Path
+# import pandas as pd
+# def list_excel_files(folder):
+#     folder = Path(folder)
+#     return {p.name: p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in [".xlsx", ".xls"]}
+# def read_matrix(excel_path, sheet_name):
+#     df = pd.read_excel(excel_path, sheet_name=sheet_name, header=0)
+#     df.columns = df.columns.astype(str).str.strip()
+#     if df.shape[1] < 2: return None
+#     var_col = df.columns[0]
+#     df[var_col] = df[var_col].astype(str).str.strip()
+#     df = df.rename(columns={var_col: "var"}).set_index("var")
+#     df.columns = df.columns.astype(str).str.strip()
+#     df = df.apply(pd.to_numeric, errors="coerce")
+#     return df
+# def merge_two_matrices_stack(df_a, df_b, source_a="A", source_b="B", keep="outer"):
+#     if df_a is None or df_b is None: return None
+#     common_groups = [c for c in df_a.columns if c in df_b.columns]
+#     if not common_groups: return None
+#     rows = []
+#     for g in common_groups:
+#         a = df_a[[g]].rename(columns={g: f"value_{source_a}"})
+#         b = df_b[[g]].rename(columns={g: f"value_{source_b}"})
+#         merged = a.join(b, how=keep)  # index=var 对齐
+#         merged = merged.reset_index()  # var 变成列
+#         merged["group"] = g
+#         rows.append(merged)
+#     out = pd.concat(rows, ignore_index=True)
+#     col_a = f"value_{source_a}"
+#     col_b = f"value_{source_b}"
+#     out["var"] = out["var"].astype(str).str.replace("EuNCP_", "", regex=False)
+#     out = out[(out[col_a].abs() > 0.7) & (out[col_b] < 0.05)].copy()
+#     out = out[["var", col_a, col_b, "group"]]
+#     return out
+# def merge_folders_by_group_stack(folder_a, folder_b, output_excel, sheet_filter="select", source_a="A", source_b="B", keep="outer"):
+#     files_a = list_excel_files(folder_a)
+#     files_b = list_excel_files(folder_b)
+#     common_files = sorted(set(files_a) & set(files_b))
+#     if not common_files: raise FileNotFoundError("两个文件夹中没有同名 Excel 文件")
+#     with pd.ExcelWriter(output_excel, engine="openpyxl") as writer:
+#         written = 0
+#         for fname in common_files:
+#             path_a = files_a[fname]
+#             path_b = files_b[fname]
+#             df_a = read_matrix(path_a, sheet_filter)
+#             df_b = read_matrix(path_b, sheet_filter)
+#             merged_long = merge_two_matrices_stack(df_a, df_b, source_a=source_a, source_b=source_b, keep=keep)
+#             merged_long.to_excel(writer, sheet_name=fname, index=False)
+#             written += 1
+#         if written == 0:
+#             raise RuntimeError("没有写入任何结果：请检查同名文件/共同 sheet/共同 group")
+#     print(f"完成：写入 {written} 个 sheet 到 {output_excel}")
+# if __name__ == "__main__":
+#     folder_a = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\group_pearson_output_R"
+#     folder_b = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\group_pearson_output_P"
+#     output_excel = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\group_pearson_merged.xlsx"
+#     merge_folders_by_group_stack(folder_a, folder_b, output_excel, sheet_filter="pearson_submatrix", source_a="R", source_b="P", keep="outer")
+
+import pandas as pd
+def normalize_ids_for_file2(ids):
+    out = set()
+    for x in ids: 
+        s = str(x).strip()
+        if s.startswith("trans_"):
+            out.add("EuNCP_" + s)
+        else:
+            out.add(s)
+    return out
+def extract_from_file2_by_sheet_ids(file1, file2, out_file, file2_sheet=None, col_var="var", col_group="group", keep_first_col="var"):
+    df2 = pd.read_excel(file2, sheet_name=file2_sheet)
+    df2.columns = df2.columns.astype(str).str.strip()
+    first_col = df2.columns[0]
+    xls1 = pd.ExcelFile(file1)
+    with pd.ExcelWriter(out_file, engine="openpyxl") as writer:
+        for sh in xls1.sheet_names:
+            df1 = pd.read_excel(file1, sheet_name=sh, dtype=str)
+            df1.columns = df1.columns.astype(str).str.strip()
+            ids = pd.concat([df1[col_var], df1[col_group]], ignore_index=True)
+            ids = ids.dropna().astype(str).str.strip()
+            ids = ids[ids.ne("") & ids.str.lower().ne("nan")]
+            ids_set = set(ids.tolist())
+            ids_set = normalize_ids_for_file2(ids_set)
+            matched_cols = [c for c in df2.columns[1:] if c in ids_set]
+            out_cols = [first_col] + matched_cols
+            extracted = df2[out_cols].copy()
+            extracted.to_excel(writer, sheet_name=sh[:31], index=False)
+    print(f"完成输出：{out_file}")
+if __name__ == "__main__":
+    file2 = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\Eu_tissue_mapped_gene_pearson_tpm.xlsx"
+    file1 = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\group_pearson_merged.xlsx"
+    out_file = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\group_pearson_merged_tpm.xlsx"
+    extract_from_file2_by_sheet_ids(file1=file1, file2=file2, out_file=out_file, file2_sheet="Sheet2", col_var="var", col_group="group", keep_first_col="var")
+
+
+
+
+
+
+
+
+
 
 
 # # 提取候选肽基因的表达量
