@@ -534,9 +534,22 @@
 #     final_df.to_excel(output_excel, index=False)
 #     print(f"筛选完成，共输出 {len(final_df)} 行")
 #     print(f"结果已写入: {output_excel}")
-# input_excel = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/deseq_analysis.xlsx"
-# output_excel = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/deseq_analysis_diff.xlsx"
+# input_excel = r"F:\work_mechanism\new_file\02figure\figure5\rubber\deseq_analysis.xlsx"
+# output_excel = r"F:\work_mechanism\new_file\02figure\figure5\rubber\deseq_analysis_diff.xlsx"
 # filter_excel_by_log2fc_pvalue(input_excel, output_excel)
+
+# # 提取相关肽的信息，用于肽分类的构建
+# import pandas as pd
+# id_file = r"F:\work_mechanism\new_file\02figure\figure5\rubber\deseq_analysis_diff.xlsx"
+# temp_file = r"F:\work_mechanism\new_file\02figure\figure5\codon\codon_prediction\codon_prediction_v7\candidates_scored.xlsx"
+# expression_info = r"F:\work_mechanism\new_file\01location\rnaseq\03ouput\finally_expressed_sp_info.xlsx"
+# df_id = pd.read_excel(id_file, sheet_name="Sheet2")
+# temp_file_df = pd.read_excel(temp_file)
+# df_express = pd.read_excel(expression_info, sheet_name="unique")
+# id_list = df_id['name']
+# id_temp = temp_file_df[temp_file_df['ID'].isin(id_list)]
+# id_express = df_express[df_express['ID'].isin(id_temp['pep_id'])]
+# id_express.to_excel(r"F:\work_mechanism\new_file\02figure\figure5\rubber\deseq_analysis_diff_pep_info.xlsx", index=False)
 
 # # TPM标准化
 # import os
@@ -803,40 +816,40 @@
 #     output_excel = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\group_pearson_merged.xlsx"
 #     merge_folders_by_group_stack(folder_a, folder_b, output_excel, sheet_filter="pearson_submatrix", source_a="R", source_b="P", keep="outer")
 
-import pandas as pd
-def normalize_ids_for_file2(ids):
-    out = set()
-    for x in ids: 
-        s = str(x).strip()
-        if s.startswith("trans_"):
-            out.add("EuNCP_" + s)
-        else:
-            out.add(s)
-    return out
-def extract_from_file2_by_sheet_ids(file1, file2, out_file, file2_sheet=None, col_var="var", col_group="group", keep_first_col="var"):
-    df2 = pd.read_excel(file2, sheet_name=file2_sheet)
-    df2.columns = df2.columns.astype(str).str.strip()
-    first_col = df2.columns[0]
-    xls1 = pd.ExcelFile(file1)
-    with pd.ExcelWriter(out_file, engine="openpyxl") as writer:
-        for sh in xls1.sheet_names:
-            df1 = pd.read_excel(file1, sheet_name=sh, dtype=str)
-            df1.columns = df1.columns.astype(str).str.strip()
-            ids = pd.concat([df1[col_var], df1[col_group]], ignore_index=True)
-            ids = ids.dropna().astype(str).str.strip()
-            ids = ids[ids.ne("") & ids.str.lower().ne("nan")]
-            ids_set = set(ids.tolist())
-            ids_set = normalize_ids_for_file2(ids_set)
-            matched_cols = [c for c in df2.columns[1:] if c in ids_set]
-            out_cols = [first_col] + matched_cols
-            extracted = df2[out_cols].copy()
-            extracted.to_excel(writer, sheet_name=sh[:31], index=False)
-    print(f"完成输出：{out_file}")
-if __name__ == "__main__":
-    file2 = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\Eu_tissue_mapped_gene_pearson_tpm.xlsx"
-    file1 = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\group_pearson_merged.xlsx"
-    out_file = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\group_pearson_merged_tpm.xlsx"
-    extract_from_file2_by_sheet_ids(file1=file1, file2=file2, out_file=out_file, file2_sheet="Sheet2", col_var="var", col_group="group", keep_first_col="var")
+# import pandas as pd
+# def normalize_ids_for_file2(ids):
+#     out = set()
+#     for x in ids: 
+#         s = str(x).strip()
+#         if s.startswith("trans_"):
+#             out.add("EuNCP_" + s)
+#         else:
+#             out.add(s)
+#     return out
+# def extract_from_file2_by_sheet_ids(file1, file2, out_file, file2_sheet=None, col_var="var", col_group="group", keep_first_col="var"):
+#     df2 = pd.read_excel(file2, sheet_name=file2_sheet)
+#     df2.columns = df2.columns.astype(str).str.strip()
+#     first_col = df2.columns[0]
+#     xls1 = pd.ExcelFile(file1)
+#     with pd.ExcelWriter(out_file, engine="openpyxl") as writer:
+#         for sh in xls1.sheet_names:
+#             df1 = pd.read_excel(file1, sheet_name=sh, dtype=str)
+#             df1.columns = df1.columns.astype(str).str.strip()
+#             ids = pd.concat([df1[col_var], df1[col_group]], ignore_index=True)
+#             ids = ids.dropna().astype(str).str.strip()
+#             ids = ids[ids.ne("") & ids.str.lower().ne("nan")]
+#             ids_set = set(ids.tolist())
+#             ids_set = normalize_ids_for_file2(ids_set)
+#             matched_cols = [c for c in df2.columns[1:] if c in ids_set]
+#             out_cols = [first_col] + matched_cols
+#             extracted = df2[out_cols].copy()
+#             extracted.to_excel(writer, sheet_name=sh[:31], index=False)
+#     print(f"完成输出：{out_file}")
+# if __name__ == "__main__":
+#     file2 = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\Eu_tissue_mapped_gene_pearson_tpm.xlsx"
+#     file1 = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\group_pearson_merged.xlsx"
+#     out_file = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\group_pearson_merged_tpm.xlsx"
+#     extract_from_file2_by_sheet_ids(file1=file1, file2=file2, out_file=out_file, file2_sheet="Sheet2", col_var="var", col_group="group", keep_first_col="var")
 
 
 
