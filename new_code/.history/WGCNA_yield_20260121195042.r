@@ -63,7 +63,7 @@ net <- blockwiseModules(
   maxBlockSize = ncol(dataExpr),
   TOMType = "signed",
   networkType = "signed",
-  minModuleSize = 150,
+  minModuleSize = 100,
   mergeCutHeight = 0.3,
   deepSplit = 2,
   reassignThreshold = 0,
