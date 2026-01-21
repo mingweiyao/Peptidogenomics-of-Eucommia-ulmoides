@@ -6,8 +6,8 @@ library(stringr)
 options(stringsAsFactors = FALSE)
 
 # ==== Step 1: 数据准备 ====
-exprMat <- "/data/Eu/test/fractionation_restart/03WGCNA/yield.txt"
-outputDir <- "/data/Eu/test/fractionation_restart/03WGCNA/WGCNA_Results_yield_test"
+exprMat <- "/data/Eu/WGCNA/rubber_count_5_fpkm.txt"
+outputDir <- "/data/Eu/WGCNA/rubber_count"
 dir.create(outputDir, showWarnings = FALSE)
 dataExpr <- read.table(exprMat, sep='\t', row.names=1, header=TRUE, quote="", comment.char="")
 dataExpr <- as.data.frame(t(dataExpr))
@@ -46,7 +46,7 @@ plot(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
      xlab="Soft Threshold (power)", ylab="Scale Free Topology Model Fit, signed R^2", type="n",
      main = "Scale independence")
 text(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2], labels=powers, cex=cex1, col="red")
-abline(h=0.85, col="red")
+abline(h=0.8, col="red")
 plot(sft$fitIndices[,1], sft$fitIndices[,5],
      xlab="Soft Threshold (power)", ylab="Mean Connectivity", type="n",
      main = "Mean connectivity")
@@ -54,7 +54,8 @@ text(sft$fitIndices[,1], sft$fitIndices[,5], labels=powers, cex=cex1, col="red")
 dev.off()
 
 # ==== Step 4: 构建网络并识别模块 ====
-softPower <- sft$powerEstimate
+# softPower <- sft$powerEstimate
+softPower <- 22
 enableWGCNAThreads()
 net <- blockwiseModules(
   dataExpr,
@@ -62,9 +63,9 @@ net <- blockwiseModules(
   maxBlockSize = ncol(dataExpr),
   TOMType = "signed",
   networkType = "signed",
-  minModuleSize = 150,
-  mergeCutHeight = 0.4,
-  deepSplit = 1,
+  minModuleSize = 100,
+  mergeCutHeight = 0.3,
+  deepSplit = 2,
   reassignThreshold = 0,
   numericLabels = TRUE,
   pamRespectsDendro = TRUE,
@@ -94,7 +95,7 @@ plotEigengeneNetworks(MEs_col, "Eigengene adjacency heatmap",
                       marHeatmap = c(3,4,2,2), plotDendrograms = T,
                       xLabelsAngle = 90)
 dev.off()
-trait <- "/data/Eu/test/fractionation_restart/03WGCNA/yield_trait.txt"
+trait <- "/data/Eu/WGCNA/rubber_count_5_fpkm_trait.txt"
 if(trait != "") {
   traitData <- read.table(file=trait, sep='\t', header=T, row.names=1,
                           check.names=FALSE, comment='',quote="")
@@ -251,7 +252,7 @@ for (mod in unique(moduleLabels)) {
   if (nrow(high_conf_pairs) > 0) {
     mod_final_pairs <- high_conf_pairs %>%
       group_by(novel) %>%
-      filter(n() >= ifelse(length(mod_annotated) > 50, 5, 5)) %>%
+      filter(n() >= 1) %>%
       ungroup()
     write.table(
       mod_final_pairs,
@@ -328,6 +329,58 @@ for (mod in unique(moduleLabels)) {
     )
   }
 }
+
+# ==== Step 14: 相关性计算====
+pairDir <- file.path(outputDir, "module_rubber_gca")   # Step13 的输出目录
+outCsv  <- file.path(outputDir, "rubber_gca_pairs_with_pearson.csv")
+pairFiles <- list.files(pairDir, pattern = "_high_conf_pairs\\.txt$", full.names = TRUE)
+if (length(pairFiles) == 0) {
+  stop(paste("No pair files found in:", pairDir))
+}
+allPairs <- do.call(rbind, lapply(pairFiles, function(f) {
+  df <- read.table(f, header = TRUE, sep = "\t", stringsAsFactors = FALSE, quote = "", comment.char = "")
+  df$source_file <- basename(f)
+  df
+}))
+# 防御：确保列名存在
+required_cols <- c("novel", "annotated", "weight", "module")
+missing_cols <- setdiff(required_cols, colnames(allPairs))
+if (length(missing_cols) > 0) {
+  stop(paste("Missing columns in pair files:", paste(missing_cols, collapse = ", ")))
+}
+# 去重（同一对可能在合并时重复）
+allPairs <- allPairs %>%
+  distinct(novel, annotated, module, weight, .keep_all = TRUE)
+# 样本数（用于 p 值）
+nSamples <- nrow(dataExpr)
+# 计算 Pearson
+calc_one <- function(novel_id, annotated_id) {
+  # 基因不在表达矩阵里就返回 NA
+  if (!(novel_id %in% colnames(dataExpr)) || !(annotated_id %in% colnames(dataExpr))) {
+    return(c(r = NA_real_, p = NA_real_))
+  }
+  x <- as.numeric(dataExpr[, novel_id])
+  y <- as.numeric(dataExpr[, annotated_id])
+  # 常数向量相关性不可定义
+  if (sd(x, na.rm = TRUE) == 0 || sd(y, na.rm = TRUE) == 0) {
+    return(c(r = NA_real_, p = NA_real_))
+  }
+  r <- cor(x, y, use = "pairwise.complete.obs", method = "pearson")
+  p <- corPvalueStudent(r, nSamples)
+  c(r = r, p = p)
+}
+rp_mat <- mapply(calc_one, allPairs$novel, allPairs$annotated)
+allPairs$pearson_r <- as.numeric(rp_mat["r", ])
+allPairs$pearson_p <- as.numeric(rp_mat["p", ])
+# 加一列方向标签（可选）
+allPairs$direction <- ifelse(is.na(allPairs$pearson_r), NA,
+                             ifelse(allPairs$pearson_r >= 0, "positive", "negative"))
+# 排序：模块、annotated、TOM降序
+allPairs <- allPairs %>%
+  arrange(module, annotated, desc(weight))
+write.csv(allPairs, outCsv, row.names = FALSE)
+message("✅ Pearson results written to: ", outCsv)
+
 
 # ==== Step 14: 可视化基因网络====
 dissTOM = 1-TOM

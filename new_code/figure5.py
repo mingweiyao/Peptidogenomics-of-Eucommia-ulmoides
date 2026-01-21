@@ -847,6 +847,36 @@
 #         sub_expr.to_excel(writer, sheet_name=sheet[:31], index=False)
 # print(f"Done. Expression data written to:\n{out_file}")
 
+# ID 替换
+import pandas as pd
+IN_CSV = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\WGCNA\rubber_gca_pairs_with_pearson.csv"
+MAP_XLS = r"F:\work_mechanism\new_file\02figure\figure5\rubber\rubber.xlsx"
+OUT_CSV = r"F:\work_mechanism\new_file\02figure\figure5\rubber\rubber_gca_pairs_with_pearson_renamed.csv"
+# ====== 读取结果 CSV ======
+df = pd.read_csv(IN_CSV, dtype=str)
+# ====== 读取映射表 ======
+map_df = pd.read_excel(MAP_XLS, sheet_name="Sheet2", dtype=str)
+# 只取前两列并重命名（防止 Excel 多余列）
+map_df = map_df.iloc[:, :2]
+map_df.columns = ["evm_old", "evm_new"]
+# 去空格
+map_df["evm_old"] = map_df["evm_old"].str.strip()
+map_df["evm_new"] = map_df["evm_new"].str.strip()
+# 构建映射字典
+id_map = dict(zip(map_df["evm_old"], map_df["evm_new"]))
+# ====== 替换 annotated ======
+df["annotated_original"] = df["annotated"]   # 保留原始 ID（推荐）
+df["annotated"] = df["annotated"].map(
+    lambda x: id_map.get(x, x)
+)
+# ====== 输出 ======
+df.to_csv(OUT_CSV, index=False)
+print("✅ Annotated IDs replaced.")
+print(f"Input : {IN_CSV}")
+print(f"Output: {OUT_CSV}")
+
+
+
 
 
 
