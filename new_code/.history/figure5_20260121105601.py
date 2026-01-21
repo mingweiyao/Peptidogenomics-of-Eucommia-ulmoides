@@ -699,77 +699,77 @@
 # mapped_df = data_df[data_df['GeneID'].isin(mapped_ids)]
 # mapped_df.to_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_count_5_fpkm_filter.xlsx", index=False)
 
-# # 按group提取pearson子矩阵
-# import os
-# import re
-# import pandas as pd
-# PEARSON_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/pearson_r_p.xlsx"
-# R_SHEET = "R"
-# P_SHEET = "P"
-# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
-# EVM_PREFIX = "evm"
-# NCPT_PREFIX = "NCPT"
-# MAP_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber.xlsx"
-# def sanitize_sheetname(name):
-#     name = str(name)
-#     name = re.sub(r"[:\\/?*\[\]]+", "_", name).strip()
-#     if not name: name = "sheet"
-#     return name[:31]
-# def is_prefix(x, prefix):
-#     return str(x).strip().lower().startswith(prefix.lower())
-# # =========================
-# # Main
-# # =========================
-# def main():
-#     map_df = pd.read_excel(MAP_FILE, sheet_name="Sheet2", dtype=str)
-#     map_df.columns = ["evm_old", "evm_new"]
-#     map_df["evm_old"] = map_df["evm_old"].str.strip()
-#     map_df["evm_new"] = map_df["evm_new"].str.strip()
-#     evm_map = dict(zip(map_df["evm_old"], map_df["evm_new"]))
-#     evm_map_filtered = {k: v for k, v in evm_map.items() if is_prefix(k, EVM_PREFIX)}
-#     rmat = pd.read_excel(PEARSON_FILE, sheet_name=R_SHEET, index_col=0)
-#     pmat = pd.read_excel(PEARSON_FILE, sheet_name=P_SHEET, index_col=0)
-#     rmat = rmat.rename(index=evm_map_filtered, columns=evm_map_filtered)
-#     pmat = pmat.rename(index=evm_map_filtered, columns=evm_map_filtered)
-#     evm_new_set = set(map_df["evm_new"])
-#     evm_ids = [rid for rid in rmat.index if rid in evm_new_set]
-#     ncpt_cols = [cid for cid in rmat.columns if is_prefix(cid, NCPT_PREFIX)]
-#     # Prepare output dir
-#     os.makedirs(os.path.dirname(OUT_FILE), exist_ok=True)
-#     used_sheetnames = set()
-#     with pd.ExcelWriter(OUT_FILE, engine="openpyxl") as writer:
-#         for evm in evm_ids:
-#             r_row = rmat.loc[evm, ncpt_cols]
-#             p_row = pmat.loc[evm, ncpt_cols]
-#             out_df = pd.DataFrame(
-#                 {
-#                     "var": ncpt_cols,
-#                     "R": r_row.values,
-#                     "P": p_row.values,
-#                 }
-#             )
-#             out_df["R"] = pd.to_numeric(out_df["R"], errors="coerce")
-#             out_df["P"] = pd.to_numeric(out_df["P"], errors="coerce")
-#             sig_df = out_df[(out_df["R"] >= 0.7) & (out_df["P"] <= 0.05)].copy()
-#             sheet = sanitize_sheetname(evm)
-#             base = sheet
-#             k = 1
-#             while sheet in used_sheetnames:
-#                 suffix = f"_{k}"
-#                 sheet = sanitize_sheetname(base[: (31 - len(suffix))] + suffix)
-#                 k += 1
-#             used_sheetnames.add(sheet)
-#             sig_df.to_excel(writer, sheet_name=sheet, index=False)
-#     print(f"Done. Output written to: {OUT_FILE}")
-#     print(f"evm sheets: {len(evm_ids)} | NCPT columns used: {len(ncpt_cols)}")
-# if __name__ == "__main__":
-#     main()
+# 按group提取pearson子矩阵
+import os
+import re
+import pandas as pd
+PEARSON_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/pearson_r_p.xlsx"
+R_SHEET = "R"
+P_SHEET = "P"
+OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
+EVM_PREFIX = "evm"
+NCPT_PREFIX = "NCPT"
+MAP_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber.xlsx"
+def sanitize_sheetname(name):
+    name = str(name)
+    name = re.sub(r"[:\\/?*\[\]]+", "_", name).strip()
+    if not name: name = "sheet"
+    return name[:31]
+def is_prefix(x, prefix):
+    return str(x).strip().lower().startswith(prefix.lower())
+# =========================
+# Main
+# =========================
+def main():
+    map_df = pd.read_excel(MAP_FILE, sheet_name="Sheet2", dtype=str)
+    map_df.columns = ["evm_old", "evm_new"]
+    map_df["evm_old"] = map_df["evm_old"].str.strip()
+    map_df["evm_new"] = map_df["evm_new"].str.strip()
+    evm_map = dict(zip(map_df["evm_old"], map_df["evm_new"]))
+    evm_map_filtered = {k: v for k, v in evm_map.items() if is_prefix(k, EVM_PREFIX)}
+    rmat = pd.read_excel(PEARSON_FILE, sheet_name=R_SHEET, index_col=0)
+    pmat = pd.read_excel(PEARSON_FILE, sheet_name=P_SHEET, index_col=0)
+    rmat = rmat.rename(index=evm_map_filtered, columns=evm_map_filtered)
+    pmat = pmat.rename(index=evm_map_filtered, columns=evm_map_filtered)
+    evm_new_set = set(map_df["evm_new"])
+    evm_ids = [rid for rid in rmat.index if rid in evm_new_set]
+    ncpt_cols = [cid for cid in rmat.columns if is_prefix(cid, NCPT_PREFIX)]
+    # Prepare output dir
+    os.makedirs(os.path.dirname(OUT_FILE), exist_ok=True)
+    used_sheetnames = set()
+    with pd.ExcelWriter(OUT_FILE, engine="openpyxl") as writer:
+        for evm in evm_ids:
+            r_row = rmat.loc[evm, ncpt_cols]
+            p_row = pmat.loc[evm, ncpt_cols]
+            out_df = pd.DataFrame(
+                {
+                    "var": ncpt_cols,
+                    "R": r_row.values,
+                    "P": p_row.values,
+                }
+            )
+            out_df["R"] = pd.to_numeric(out_df["R"], errors="coerce")
+            out_df["P"] = pd.to_numeric(out_df["P"], errors="coerce")
+            sig_df = out_df[(out_df["R"] >= 0.7) & (out_df["P"] <= 0.05)].copy()
+            sheet = sanitize_sheetname(evm)
+            base = sheet
+            k = 1
+            while sheet in used_sheetnames:
+                suffix = f"_{k}"
+                sheet = sanitize_sheetname(base[: (31 - len(suffix))] + suffix)
+                k += 1
+            used_sheetnames.add(sheet)
+            sig_df.to_excel(writer, sheet_name=sheet, index=False)
+    print(f"Done. Output written to: {OUT_FILE}")
+    print(f"evm sheets: {len(evm_ids)} | NCPT columns used: {len(ncpt_cols)}")
+if __name__ == "__main__":
+    main()
 
 # # 上个文件的summary
 # import pandas as pd
 # import os
-# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
-# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP_summary.xlsx"
+# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP.xlsx"
+# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP_summary.xlsx"
 # R_COL = "R"
 # def main():
 #     xls = pd.ExcelFile(IN_FILE)
@@ -797,8 +797,8 @@
 # # 上个文件的var
 # import pandas as pd
 # import os
-# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
-# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP_var.xlsx"
+# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP.xlsx"
+# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP_var.xlsx"
 # VAR_COL = "var"
 # def main():
 #     xls = pd.ExcelFile(IN_FILE)
@@ -821,9 +821,9 @@
 # import pandas as pd
 # import os
 # import numpy as np
-# in_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
+# in_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP.xlsx"
 # expression_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_count_5_fpkm_filter.xlsx"
-# out_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP_fpkm.xlsx"
+# out_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP_fpkm.xlsx"
 # # ========= 读取表达矩阵 =========
 # df_expr = pd.read_excel(expression_file, sheet_name="Sheet1")
 # df_expr["GeneID"] = df_expr["GeneID"].astype(str).str.strip()
@@ -846,6 +846,30 @@
 #         sub_expr[expr_cols] = np.log2(sub_expr[expr_cols] + 0.1)        
 #         sub_expr.to_excel(writer, sheet_name=sheet[:31], index=False)
 # print(f"Done. Expression data written to:\n{out_file}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

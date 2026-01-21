@@ -797,8 +797,8 @@
 # # 上个文件的var
 # import pandas as pd
 # import os
-# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
-# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP_var.xlsx"
+# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP.xlsx"
+# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP_var.xlsx"
 # VAR_COL = "var"
 # def main():
 #     xls = pd.ExcelFile(IN_FILE)
@@ -821,9 +821,9 @@
 # import pandas as pd
 # import os
 # import numpy as np
-# in_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
+# in_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP.xlsx"
 # expression_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_count_5_fpkm_filter.xlsx"
-# out_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP_fpkm.xlsx"
+# out_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP_fpkm.xlsx"
 # # ========= 读取表达矩阵 =========
 # df_expr = pd.read_excel(expression_file, sheet_name="Sheet1")
 # df_expr["GeneID"] = df_expr["GeneID"].astype(str).str.strip()
@@ -846,6 +846,30 @@
 #         sub_expr[expr_cols] = np.log2(sub_expr[expr_cols] + 0.1)        
 #         sub_expr.to_excel(writer, sheet_name=sheet[:31], index=False)
 # print(f"Done. Expression data written to:\n{out_file}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

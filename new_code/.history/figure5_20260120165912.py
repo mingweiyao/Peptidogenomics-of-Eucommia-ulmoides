@@ -617,235 +617,277 @@
 #     count_df = read_counts(COUNT_FILE)
 #     normalize_tpm(count_df, length_df, os.path.join(OUT_DIR, "rubber_count_tpm.xlsx"))
 
-# # FPKM标准化
-# import os
-# import pandas as pd
-# import gffutils
-# GFF_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/codon/codon_prediction/codon_prediction_v7/sp_codon.gff"
-# COUNT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_count_5.xlsx"
-# OUT_DIR = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/"
-# def prepare_length_data(gff_file):
-#     db_path = gff_file + ".db"
-#     if not os.path.exists(db_path):
-#         print("🔄 正在创建 GFF 数据库...")
-#         gffutils.create_db(
-#             gff_file,
-#             dbfn=db_path,
-#             force=True,
-#             keep_order=True,
-#             merge_strategy="merge",
-#             id_spec={"gene": "ID", "mRNA": "ID", "CDS": "Parent"},
-#             disable_infer_genes=True,
-#             disable_infer_transcripts=True
-#         )
-#     db = gffutils.FeatureDB(db_path)
-#     gene_lengths = {}
-#     for gene in db.features_of_type("gene"):
-#         total_length = 0
-#         for mrna in db.children(gene, featuretype="mRNA", order_by="start"):
-#             exons = list(db.children(mrna, featuretype="exon", order_by="start"))
-#             if exons:
-#                 mrna_len = sum(e.end - e.start + 1 for e in exons)
-#                 total_length += mrna_len
-#         if total_length > 0:
-#             gene_id = gene.id.replace("evm.model.", "evm.TU.")
-#             gene_lengths[gene_id] = total_length
-#     length_df = pd.DataFrame(gene_lengths.items(), columns=["GeneID", "length"])
-#     out_len = os.path.join(OUT_DIR, "gene_lengths.csv")
-#     length_df.to_csv(out_len, index=False)
-#     print(f"✅ 基因长度表已生成：{out_len}")
-#     return length_df
-# def read_counts(count_file):
-#     if count_file.lower().endswith(".csv"):
-#         df = pd.read_csv(count_file)
-#     else:
-#         df = pd.read_excel(count_file)
-#     if df.columns[0] != "GeneID":
-#         df = df.rename(columns={df.columns[0]: "GeneID"})
-#     # 确保 GeneID 为字符串且去空格
-#     df["GeneID"] = df["GeneID"].astype(str).str.strip()
-#     return df
-# def normalize_fpkm(count_df, length_df, output_file):
-#     length_df = length_df.copy()
-#     length_df["GeneID"] = length_df["GeneID"].astype(str).str.strip()
-#     df = pd.merge(count_df, length_df, on="GeneID", how="inner")
-#     df = df[df["length"] > 0].copy()
-#     sample_cols = [c for c in df.columns if c not in ["GeneID", "length"]]
-#     fpkm_data = {}
-#     for sample in sample_cols:
-#         counts = pd.to_numeric(df[sample], errors="coerce").fillna(0)
-#         N = counts.sum()
-#         if N == 0:
-#             # 全是0时，直接输出0
-#             fpkm = counts * 0.0
-#         else:
-#             L = df["length"].astype(float)  # bp
-#             fpkm = (1e9 * counts) / (N * L)
-#         fpkm_data[sample] = fpkm
-#     fpkm_df = pd.concat([df[["GeneID"]], pd.DataFrame(fpkm_data)], axis=1)
-#     fpkm_df.to_excel(output_file, index=False)
-#     print(f"✅ FPKM 输出完成：{output_file}")
-# if __name__ == "__main__":
-#     os.makedirs(OUT_DIR, exist_ok=True)
-#     length_df = prepare_length_data(GFF_FILE)
-#     count_df = read_counts(COUNT_FILE)
-#     normalize_fpkm(count_df, length_df, os.path.join(OUT_DIR, "rubber_count_5_fpkm.xlsx"))
-
 # # 提取特定基因表达量
 # import pandas as pd
-# id_mapping_df = pd.read_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber.xlsx", sheet_name="Sheet2")
-# data_df = pd.read_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_count_5_fpkm.xlsx")
-# mapped_ids = id_mapping_df['evm_old']
+# id_mapping_df = pd.read_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber.xlsx", sheet_name="Sheet2")
+# data_df = pd.read_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber_count_tpm.xlsx")
+# mapped_ids = id_mapping_df['ID']
 # mapped_df = data_df[data_df['GeneID'].isin(mapped_ids)]
-# mapped_df.to_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_count_5_fpkm_filter.xlsx", index=False)
+# mapped_df.to_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber_count_tpm_filter.xlsx", index=False)
 
-# # 按group提取pearson子矩阵
+# 按group提取pearson子矩阵
+import os
+import re
+import pandas as pd
+PEARSON_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/pearson_r_p.xlsx"
+R_SHEET = "R"
+P_SHEET = "P"
+OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP.xlsx"
+EVM_PREFIX = "evm"
+NCPT_PREFIX = "NCPT"
+MAP_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber.xlsx"
+def sanitize_sheetname(name):
+    name = str(name)
+    name = re.sub(r"[:\\/?*\[\]]+", "_", name).strip()
+    if not name: name = "sheet"
+    return name[:31]
+def is_prefix(x, prefix):
+    return str(x).strip().lower().startswith(prefix.lower())
+# =========================
+# Main
+# =========================
+def main():
+    map_df = pd.read_excel(MAP_FILE, sheet_name="Sheet2", dtype=str)
+    map_df.columns = ["evm_old", "evm_new"]
+    map_df["evm_old"] = map_df["evm_old"].str.strip()
+    map_df["evm_new"] = map_df["evm_new"].str.strip()
+    evm_map = dict(zip(map_df["evm_old"], map_df["evm_new"]))
+    evm_map_filtered = {k: v for k, v in evm_map.items() if is_prefix(k, EVM_PREFIX)}
+    rmat = pd.read_excel(PEARSON_FILE, sheet_name=R_SHEET, index_col=0)
+    pmat = pd.read_excel(PEARSON_FILE, sheet_name=P_SHEET, index_col=0)
+    rmat = rmat.rename(index=evm_map_filtered, columns=evm_map_filtered)
+    pmat = pmat.rename(index=evm_map_filtered, columns=evm_map_filtered)
+    evm_new_set = set(map_df["evm_new"])
+    evm_ids = [rid for rid in rmat.index if rid in evm_new_set]
+    ncpt_cols = [cid for cid in rmat.columns if is_prefix(cid, NCPT_PREFIX)]
+    # Prepare output dir
+    os.makedirs(os.path.dirname(OUT_FILE), exist_ok=True)
+    summary_rows = []
+    used_sheetnames = set()
+    with pd.ExcelWriter(OUT_FILE, engine="openpyxl") as writer:
+        for evm in evm_ids:
+            r_row = rmat.loc[evm, ncpt_cols]
+            p_row = pmat.loc[evm, ncpt_cols]
+            out_df = pd.DataFrame(
+                {
+                    "var": ncpt_cols,
+                    "R": r_row.values,
+                    "P": p_row.values,
+                }
+            )
+            sheet = sanitize_sheetname(evm)
+            base = sheet
+            k = 1
+            while sheet in used_sheetnames:
+                suffix = f"_{k}"
+                sheet = sanitize_sheetname(base[: (31 - len(suffix))] + suffix)
+                k += 1
+            used_sheetnames.add(sheet)
+            out_df.to_excel(writer, sheet_name=sheet, index=False)
+            summary_rows.append({
+                "evm_new": evm,
+                "sheet_name": sheet,
+                "ncpt_count": len(ncpt_cols),
+                "non_nan_R": int(out_df["R"].notna().sum()),
+                "non_nan_P": int(out_df["P"].notna().sum()),
+            })
+        # SUMMARY sheet
+        pd.DataFrame(summary_rows).to_excel(writer, sheet_name="SUMMARY", index=False)
+    print(f"Done. Output written to: {OUT_FILE}")
+    print(f"evm sheets: {len(evm_ids)} | NCPT columns used: {len(ncpt_cols)}")
+if __name__ == "__main__":
+    main()
+
+
 # import os
-# import re
+# from pathlib import Path
 # import pandas as pd
-# PEARSON_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/pearson_r_p.xlsx"
-# R_SHEET = "R"
-# P_SHEET = "P"
-# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
-# EVM_PREFIX = "evm"
-# NCPT_PREFIX = "NCPT"
-# MAP_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber.xlsx"
-# def sanitize_sheetname(name):
-#     name = str(name)
-#     name = re.sub(r"[:\\/?*\[\]]+", "_", name).strip()
-#     if not name: name = "sheet"
-#     return name[:31]
-# def is_prefix(x, prefix):
-#     return str(x).strip().lower().startswith(prefix.lower())
-# # =========================
-# # Main
-# # =========================
+# def list_excel_files(folder):
+#     folder = Path(folder)
+#     return {p.name: p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in [".xlsx", ".xls"]}
+# def read_matrix(excel_path, sheet_name):
+#     df = pd.read_excel(excel_path, sheet_name=sheet_name, header=0)
+#     df.columns = df.columns.astype(str).str.strip()
+#     if df.shape[1] < 2: return None
+#     var_col = df.columns[0]
+#     df[var_col] = df[var_col].astype(str).str.strip()
+#     df = df.rename(columns={var_col: "var"}).set_index("var")
+#     df.columns = df.columns.astype(str).str.strip()
+#     df = df.apply(pd.to_numeric, errors="coerce")
+#     return df
+# def merge_two_matrices_stack(df_a, df_b, source_a="A", source_b="B", keep="outer"):
+#     if df_a is None or df_b is None: return None
+#     common_groups = [c for c in df_a.columns if c in df_b.columns]
+#     if not common_groups: return None
+#     rows = []
+#     for g in common_groups:
+#         a = df_a[[g]].rename(columns={g: f"value_{source_a}"})
+#         b = df_b[[g]].rename(columns={g: f"value_{source_b}"})
+#         merged = a.join(b, how=keep)  # index=var 对齐
+#         merged = merged.reset_index()  # var 变成列
+#         merged["group"] = g
+#         rows.append(merged)
+#     out = pd.concat(rows, ignore_index=True)
+#     col_a = f"value_{source_a}"
+#     col_b = f"value_{source_b}"
+#     out["var"] = out["var"].astype(str).str.replace("EuNCP_", "", regex=False)
+#     out = out[(out[col_a].abs() > 0.7) & (out[col_b] < 0.05)].copy()
+#     out = out[["var", col_a, col_b, "group"]]
+#     return out
+# def merge_folders_by_group_stack(folder_a, folder_b, output_excel, sheet_filter="select", source_a="A", source_b="B", keep="outer"):
+#     files_a = list_excel_files(folder_a)
+#     files_b = list_excel_files(folder_b)
+#     common_files = sorted(set(files_a) & set(files_b))
+#     if not common_files: raise FileNotFoundError("两个文件夹中没有同名 Excel 文件")
+#     with pd.ExcelWriter(output_excel, engine="openpyxl") as writer:
+#         written = 0
+#         for fname in common_files:
+#             path_a = files_a[fname]
+#             path_b = files_b[fname]
+#             df_a = read_matrix(path_a, sheet_filter)
+#             df_b = read_matrix(path_b, sheet_filter)
+#             merged_long = merge_two_matrices_stack(df_a, df_b, source_a=source_a, source_b=source_b, keep=keep)
+#             merged_long.to_excel(writer, sheet_name=fname, index=False)
+#             written += 1
+#         if written == 0:
+#             raise RuntimeError("没有写入任何结果：请检查同名文件/共同 sheet/共同 group")
+#     print(f"完成：写入 {written} 个 sheet 到 {output_excel}")
+# if __name__ == "__main__":
+#     folder_a = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\group_pearson_output_R"
+#     folder_b = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\group_pearson_output_P"
+#     output_excel = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\group_pearson_merged.xlsx"
+#     merge_folders_by_group_stack(folder_a, folder_b, output_excel, sheet_filter="pearson_submatrix", source_a="R", source_b="P", keep="outer")
+
+
+
+
+# # 替换ID
+# import pandas as pd
+# map_file = r"F:\work_mechanism\new_file\02figure\figure5\rubber\rubber\rubber.xlsx"
+# map_df = pd.read_excel(map_file, sheet_name="Sheet2")
+# map_df = map_df[["ID", "name"]]
+# id_to_name = dict(zip(map_df["ID"], map_df["name"]))
+# data_file = r"F:\work_mechanism\new_file\02figure\figure5\rubber\Eu_tissue_mapped_gene_pearson.xlsx"
+# data_df = pd.read_excel(data_file, sheet_name="Sheet1")
+# data_df["Var1"] = data_df["Var1"].map(id_to_name).fillna(data_df["Var1"])
+# out_file = r"F:\work_mechanism\new_file\02figure\figure5\rubber\Var2_replaced_with_name.xlsx"
+# data_df.to_excel(out_file, index=False)
+# print("替换完成，结果已保存为：", out_file)
+
+# # 提取|r|>0.8, p<0.05的基因的tpm表达量，然后计算相关性
+# import pandas as pd
+# id_mapping_df = pd.read_excel(r"F:\work_mechanism\new_file\02figure\figure5\rubber\Eu_tissue_mapped_gene_pearson.xlsx", sheet_name="Sheet2")
+# data_df = pd.read_excel(r"F:\work_mechanism\new_file\02figure\figure5\rubber\rubber\correlation\rubber_count_tpm_filter.xlsx", sheet_name="Sheet1")
+# mapped_ids = id_mapping_df['ID']
+# mapped_df = data_df[data_df['GeneID'].isin(mapped_ids)]
+# mapped_df.to_excel(r"F:\work_mechanism\new_file\02figure\figure5\rubber\Eu_tissue_mapped_gene_pearson_tpm.xlsx", index=False)
+
+# # 提取不同Group的量
+# import pandas as pd
+# IN_FILE = r"F:\work_mechanism\new_file\02figure\figure5\rubber\Eu_tissue_mapped_gene_pearson.xlsx"
+# OUT_FILE = r"F:\work_mechanism\new_file\02figure\figure5\rubber\Eu_tissue_mapped_gene_pearson_group.xlsx"
+# ID_SHEET = "id_group"
+# DATA_SHEET = "filter_0.8"
+# def unique_keep_order(seq):
+#     seen = set()
+#     out = []
+#     for x in seq:
+#         if pd.isna(x):
+#             continue
+#         if x not in seen:
+#             seen.add(x)
+#             out.append(x)
+#     return out
 # def main():
-#     map_df = pd.read_excel(MAP_FILE, sheet_name="Sheet2", dtype=str)
-#     map_df.columns = ["evm_old", "evm_new"]
-#     map_df["evm_old"] = map_df["evm_old"].str.strip()
-#     map_df["evm_new"] = map_df["evm_new"].str.strip()
-#     evm_map = dict(zip(map_df["evm_old"], map_df["evm_new"]))
-#     evm_map_filtered = {k: v for k, v in evm_map.items() if is_prefix(k, EVM_PREFIX)}
-#     rmat = pd.read_excel(PEARSON_FILE, sheet_name=R_SHEET, index_col=0)
-#     pmat = pd.read_excel(PEARSON_FILE, sheet_name=P_SHEET, index_col=0)
-#     rmat = rmat.rename(index=evm_map_filtered, columns=evm_map_filtered)
-#     pmat = pmat.rename(index=evm_map_filtered, columns=evm_map_filtered)
-#     evm_new_set = set(map_df["evm_new"])
-#     evm_ids = [rid for rid in rmat.index if rid in evm_new_set]
-#     ncpt_cols = [cid for cid in rmat.columns if is_prefix(cid, NCPT_PREFIX)]
-#     # Prepare output dir
-#     os.makedirs(os.path.dirname(OUT_FILE), exist_ok=True)
-#     used_sheetnames = set()
+#     id_df = pd.read_excel(IN_FILE, sheet_name=ID_SHEET)
+#     id_df = id_df[["Var1", "Group"]].dropna(subset=["Var1", "Group"])
+#     var2_to_group = dict(zip(id_df["Var1"], id_df["Group"]))
+#     df = pd.read_excel(IN_FILE, sheet_name=DATA_SHEET)
+#     df = df[["Var1", "Var2"]].dropna(subset=["Var1", "Var2"])
+#     df["Group"] = df["Var1"].map(var2_to_group)
+#     unmapped = df[df["Group"].isna()].copy()
+#     df_mapped = df.dropna(subset=["Group"]).copy()
+#     grouped = (
+#         df_mapped.groupby("Group")["Var2"]
+#         .apply(lambda s: unique_keep_order(s.tolist()))
+#         .to_dict()
+#     )
+#     out_df = pd.DataFrame({g: pd.Series(v) for g, v in grouped.items()})
 #     with pd.ExcelWriter(OUT_FILE, engine="openpyxl") as writer:
-#         for evm in evm_ids:
-#             r_row = rmat.loc[evm, ncpt_cols]
-#             p_row = pmat.loc[evm, ncpt_cols]
-#             out_df = pd.DataFrame(
-#                 {
-#                     "var": ncpt_cols,
-#                     "R": r_row.values,
-#                     "P": p_row.values,
-#                 }
-#             )
-#             out_df["R"] = pd.to_numeric(out_df["R"], errors="coerce")
-#             out_df["P"] = pd.to_numeric(out_df["P"], errors="coerce")
-#             sig_df = out_df[(out_df["R"] >= 0.7) & (out_df["P"] <= 0.05)].copy()
-#             sheet = sanitize_sheetname(evm)
-#             base = sheet
-#             k = 1
-#             while sheet in used_sheetnames:
-#                 suffix = f"_{k}"
-#                 sheet = sanitize_sheetname(base[: (31 - len(suffix))] + suffix)
-#                 k += 1
-#             used_sheetnames.add(sheet)
-#             sig_df.to_excel(writer, sheet_name=sheet, index=False)
-#     print(f"Done. Output written to: {OUT_FILE}")
-#     print(f"evm sheets: {len(evm_ids)} | NCPT columns used: {len(ncpt_cols)}")
+#         out_df.to_excel(writer, sheet_name="Group_to_Var2", index=False)
+#         if not unmapped.empty:
+#             unmapped.to_excel(writer, sheet_name="Unmapped", index=False)
 # if __name__ == "__main__":
 #     main()
 
-# # 上个文件的summary
-# import pandas as pd
-# import os
-# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
-# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP_summary.xlsx"
-# R_COL = "R"
-# def main():
-#     xls = pd.ExcelFile(IN_FILE)
-#     summary_rows = []
-#     for sheet in xls.sheet_names:
-#         df = pd.read_excel(xls, sheet_name=sheet)
-#         if R_COL not in df.columns: continue
-#         r = pd.to_numeric(df[R_COL], errors="coerce")
-#         pos_count = (r > 0).sum()
-#         neg_count = (r < 0).sum()
-#         total_count = r.notna().sum()
-#         summary_rows.append({
-#             "sheet": sheet,
-#             "R_positive(>0)": int(pos_count),
-#             "R_negative(<0)": int(neg_count),
-#             "R_total(non-NA)": int(total_count),
-#         })
-#     summary_df = pd.DataFrame(summary_rows)
-#     os.makedirs(os.path.dirname(OUT_FILE), exist_ok=True)
-#     summary_df.to_excel(OUT_FILE, index=False)
-#     print(f"Done. Summary written to:\n{OUT_FILE}")
-# if __name__ == "__main__":
-#     main()
 
-# # 上个文件的var
-# import pandas as pd
-# import os
-# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
-# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP_var.xlsx"
-# VAR_COL = "var"
-# def main():
-#     xls = pd.ExcelFile(IN_FILE)
-#     cols = {}
-#     for sheet in xls.sheet_names:
-#         df = pd.read_excel(xls, sheet_name=sheet)
-#         if VAR_COL not in df.columns: continue
-#         s = df[VAR_COL].dropna().astype(str).reset_index(drop=True)
-#         cols[sheet] = s
-#     out_df = pd.DataFrame(cols)
-#     out_df = out_df.reindex(sorted(out_df.columns), axis=1)
-#     os.makedirs(os.path.dirname(OUT_FILE), exist_ok=True)
-#     out_df.to_excel(OUT_FILE, index=False)
-#     print(f"Done. Output written to:\n{OUT_FILE}")
-#     print(f"Sheets included: {len(out_df.columns)}")
-# if __name__ == "__main__":
-#     main()
 
-# # 提取不同sheet的表达量
+
 # import pandas as pd
-# import os
-# import numpy as np
-# in_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
-# expression_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_count_5_fpkm_filter.xlsx"
-# out_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP_fpkm.xlsx"
-# # ========= 读取表达矩阵 =========
-# df_expr = pd.read_excel(expression_file, sheet_name="Sheet1")
-# df_expr["GeneID"] = df_expr["GeneID"].astype(str).str.strip()
-# # ========= 读取相关性文件 =========
-# xls = pd.ExcelFile(in_file)
-# os.makedirs(os.path.dirname(out_file), exist_ok=True)
-# with pd.ExcelWriter(out_file, engine="openpyxl") as writer:
-#     for sheet in xls.sheet_names:
-#         if sheet.upper() == "SUMMARY": continue
-#         df = pd.read_excel(xls, sheet_name=sheet)
-#         if "var" not in df.columns: continue
-#         # 目标基因列表（mubiaoID）
-#         target_ids = (df["var"].astype(str).str.strip().dropna().unique())
-#         # 从表达矩阵中提取
-#         sub_expr = df_expr[df_expr["GeneID"].isin(target_ids)].copy()
-#         # 如果你希望表达量顺序和 var 一致（很重要，默认推荐）
-#         sub_expr["GeneID"] = pd.Categorical(sub_expr["GeneID"], categories=target_ids, ordered=True)
-#         sub_expr = sub_expr.sort_values("GeneID")
-#         expr_cols = sub_expr.columns.difference(["GeneID"])
-#         sub_expr[expr_cols] = np.log2(sub_expr[expr_cols] + 0.1)        
-#         sub_expr.to_excel(writer, sheet_name=sheet[:31], index=False)
-# print(f"Done. Expression data written to:\n{out_file}")
+# def normalize_ids_for_file2(ids):
+#     out = set()
+#     for x in ids: 
+#         s = str(x).strip()
+#         if s.startswith("trans_"):
+#             out.add("EuNCP_" + s)
+#         else:
+#             out.add(s)
+#     return out
+# def extract_from_file2_by_sheet_ids(file1, file2, out_file, file2_sheet=None, col_var="var", col_group="group", keep_first_col="var"):
+#     df2 = pd.read_excel(file2, sheet_name=file2_sheet)
+#     df2.columns = df2.columns.astype(str).str.strip()
+#     first_col = df2.columns[0]
+#     xls1 = pd.ExcelFile(file1)
+#     with pd.ExcelWriter(out_file, engine="openpyxl") as writer:
+#         for sh in xls1.sheet_names:
+#             df1 = pd.read_excel(file1, sheet_name=sh, dtype=str)
+#             df1.columns = df1.columns.astype(str).str.strip()
+#             ids = pd.concat([df1[col_var], df1[col_group]], ignore_index=True)
+#             ids = ids.dropna().astype(str).str.strip()
+#             ids = ids[ids.ne("") & ids.str.lower().ne("nan")]
+#             ids_set = set(ids.tolist())
+#             ids_set = normalize_ids_for_file2(ids_set)
+#             matched_cols = [c for c in df2.columns[1:] if c in ids_set]
+#             out_cols = [first_col] + matched_cols
+#             extracted = df2[out_cols].copy()
+#             extracted.to_excel(writer, sheet_name=sh[:31], index=False)
+#     print(f"完成输出：{out_file}")
+# if __name__ == "__main__":
+#     file2 = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\Eu_tissue_mapped_gene_pearson_tpm.xlsx"
+#     file1 = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\group_pearson_merged.xlsx"
+#     out_file = r"F:\work_mechanism\new_file\02figure\figure5\rubber\correlation\group_pearson_merged_tpm.xlsx"
+#     extract_from_file2_by_sheet_ids(file1=file1, file2=file2, out_file=out_file, file2_sheet="Sheet2", col_var="var", col_group="group", keep_first_col="var")
+
+
+
+
+
+
+
+
+
+
+
+# # 提取候选肽基因的表达量
+# import pandas as pd
+# accession_file = r"D:\Desktop\peptidemicro\00file\01figure\figure4\codon\output_candidates_filtered.xlsx"
+# count_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\total_all_matrix.xlsx"
+# out_file = r"D:\Desktop\peptidemicro\00file\01figure\figure5\total_all_matrix_filtered.xlsx"
+# accession_df = pd.read_excel(accession_file, sheet_name="task1_all_no_overlap", engine="openpyxl")
+# count_df = pd.read_excel(count_file, engine="openpyxl")
+# accessions = set(accession_df["accession"].dropna().astype(str))
+# filtered_count_df = count_df[count_df["GeneID"].astype(str).isin(accessions)]
+# filtered_count_df.to_excel(out_file, index=False)
+
+
+
+
+
+
+
+
+
+
 
 
 

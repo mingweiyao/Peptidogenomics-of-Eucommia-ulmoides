@@ -706,7 +706,7 @@
 # PEARSON_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/pearson_r_p.xlsx"
 # R_SHEET = "R"
 # P_SHEET = "P"
-# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
+# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP.xlsx"
 # EVM_PREFIX = "evm"
 # NCPT_PREFIX = "NCPT"
 # MAP_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber.xlsx"
@@ -750,7 +750,7 @@
 #             )
 #             out_df["R"] = pd.to_numeric(out_df["R"], errors="coerce")
 #             out_df["P"] = pd.to_numeric(out_df["P"], errors="coerce")
-#             sig_df = out_df[(out_df["R"] >= 0.7) & (out_df["P"] <= 0.05)].copy()
+#             sig_df = out_df[(out_df["R"].abs() >= 0.7) & (out_df["P"] <= 0.05)].copy()
 #             sheet = sanitize_sheetname(evm)
 #             base = sheet
 #             k = 1
@@ -768,8 +768,8 @@
 # # 上个文件的summary
 # import pandas as pd
 # import os
-# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
-# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP_summary.xlsx"
+# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP.xlsx"
+# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP_summary.xlsx"
 # R_COL = "R"
 # def main():
 #     xls = pd.ExcelFile(IN_FILE)
@@ -797,8 +797,8 @@
 # # 上个文件的var
 # import pandas as pd
 # import os
-# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
-# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP_var.xlsx"
+# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP.xlsx"
+# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP_var.xlsx"
 # VAR_COL = "var"
 # def main():
 #     xls = pd.ExcelFile(IN_FILE)
@@ -817,35 +817,59 @@
 # if __name__ == "__main__":
 #     main()
 
-# # 提取不同sheet的表达量
-# import pandas as pd
-# import os
-# import numpy as np
-# in_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
-# expression_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_count_5_fpkm_filter.xlsx"
-# out_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP_fpkm.xlsx"
-# # ========= 读取表达矩阵 =========
-# df_expr = pd.read_excel(expression_file, sheet_name="Sheet1")
-# df_expr["GeneID"] = df_expr["GeneID"].astype(str).str.strip()
-# # ========= 读取相关性文件 =========
-# xls = pd.ExcelFile(in_file)
-# os.makedirs(os.path.dirname(out_file), exist_ok=True)
-# with pd.ExcelWriter(out_file, engine="openpyxl") as writer:
-#     for sheet in xls.sheet_names:
-#         if sheet.upper() == "SUMMARY": continue
-#         df = pd.read_excel(xls, sheet_name=sheet)
-#         if "var" not in df.columns: continue
-#         # 目标基因列表（mubiaoID）
-#         target_ids = (df["var"].astype(str).str.strip().dropna().unique())
-#         # 从表达矩阵中提取
-#         sub_expr = df_expr[df_expr["GeneID"].isin(target_ids)].copy()
-#         # 如果你希望表达量顺序和 var 一致（很重要，默认推荐）
-#         sub_expr["GeneID"] = pd.Categorical(sub_expr["GeneID"], categories=target_ids, ordered=True)
-#         sub_expr = sub_expr.sort_values("GeneID")
-#         expr_cols = sub_expr.columns.difference(["GeneID"])
-#         sub_expr[expr_cols] = np.log2(sub_expr[expr_cols] + 0.1)        
-#         sub_expr.to_excel(writer, sheet_name=sheet[:31], index=False)
-# print(f"Done. Expression data written to:\n{out_file}")
+# 提取不同sheet的表达量
+import pandas as pd
+import os
+import numpy as np
+in_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP.xlsx"
+expression_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_count_5_fpkm_filter.xlsx"
+out_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP_fpkm.xlsx"
+# ========= 读取表达矩阵 =========
+df_expr = pd.read_excel(expression_file, sheet_name="Sheet1")
+df_expr["GeneID"] = df_expr["GeneID"].astype(str).str.strip()
+# ========= 读取相关性文件 =========
+xls = pd.ExcelFile(in_file)
+os.makedirs(os.path.dirname(out_file), exist_ok=True)
+with pd.ExcelWriter(out_file, engine="openpyxl") as writer:
+    for sheet in xls.sheet_names:
+        if sheet.upper() == "SUMMARY": continue
+        df = pd.read_excel(xls, sheet_name=sheet)
+        if "var" not in df.columns: continue
+        # 目标基因列表（mubiaoID）
+        target_ids = (df["var"].astype(str).str.strip().dropna().unique())
+        # 从表达矩阵中提取
+        sub_expr = df_expr[df_expr["GeneID"].isin(target_ids)].copy()
+        # 如果你希望表达量顺序和 var 一致（很重要，默认推荐）
+        sub_expr["GeneID"] = pd.Categorical(sub_expr["GeneID"], categories=target_ids, ordered=True)
+        sub_expr = sub_expr.sort_values("GeneID")
+        expr_cols = sub_expr.columns.difference(["GeneID"])
+        sub_expr[expr_cols] = np.log2(sub_expr[expr_cols] + 0.1)        
+        sub_expr.to_excel(writer, sheet_name=sheet[:31], index=False)
+print(f"Done. Expression data written to:\n{out_file}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -848,6 +848,123 @@
 # print(f"Done. Expression data written to:\n{out_file}")
 
 
+import pandas as pd
+import numpy as np
+from scipy.stats import pearsonr
+import os
+import re
+# =========================
+# 参数
+# =========================
+IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_count_5_fpkm_filter.xlsx"
+OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_curve_similarity.xlsx"
+EVM_PREFIX = "evm"
+NCPT_PREFIX = "NCPT"
+PSEUDO = 0.1     # log2(FPKM + 0.1)
+# =========================
+# 工具函数
+# =========================
+def is_prefix(x, prefix):
+    return str(x).lower().startswith(prefix)
+def sanitize_sheetname(name):
+    name = str(name)
+    name = re.sub(r"[:\\/?*\[\]]+", "_", name).strip()
+    return name[:31] if name else "sheet"
+# =========================
+# 主流程
+# =========================
+def main():
+    df = pd.read_excel(IN_FILE)
+    gene_col = df.columns[0]
+    expr_cols = df.columns[1:]
+    df[gene_col] = df[gene_col].astype(str).str.strip()
+    df[expr_cols] = df[expr_cols].apply(pd.to_numeric, errors="coerce").fillna(0)
+    # log2(FPKM + 0.1)
+    X = np.log2(df[expr_cols] + PSEUDO)
+    # 拆分 evm / NCPT
+    evm_idx = df[gene_col].apply(lambda x: is_prefix(x, EVM_PREFIX))
+    ncpt_idx = df[gene_col].apply(lambda x: is_prefix(x, NCPT_PREFIX))
+    evm_df = df.loc[evm_idx].reset_index(drop=True)
+    ncpt_df = df.loc[ncpt_idx].reset_index(drop=True)
+    X_evm = X.loc[evm_idx].reset_index(drop=True)
+    X_ncpt = X.loc[ncpt_idx].reset_index(drop=True)
+    os.makedirs(os.path.dirname(OUT_FILE) or ".", exist_ok=True)
+    with pd.ExcelWriter(OUT_FILE, engine="openpyxl") as writer:
+        summary_rows = []
+        for i in range(len(evm_df)):
+            evm_id = evm_df.loc[i, gene_col]
+            evm_vec = X_evm.iloc[i].values.astype(float)
+            # evm 中心化
+            evm0 = evm_vec - evm_vec.mean()
+            evm_amp = evm0.std(ddof=0)
+            if evm_amp == 0: continue
+            rows = []
+            for j in range(len(ncpt_df)):
+                ncpt_id = ncpt_df.loc[j, gene_col]
+                ncpt_vec = X_ncpt.iloc[j].values.astype(float)
+                ncpt0 = ncpt_vec - ncpt_vec.mean()
+                ncpt_amp = ncpt0.std(ddof=0)
+                # RMSE（核心相似度）
+                rmse = float(np.sqrt(np.mean((ncpt0 - evm0) ** 2)))
+                # 幅度比例
+                amp_ratio = float(ncpt_amp / evm_amp) if evm_amp != 0 else np.nan
+                # Pearson（方向：同向 / 镜像）
+                if np.std(ncpt_vec) > 0 and np.std(evm_vec) > 0:
+                    r, p = pearsonr(ncpt_vec, evm_vec)
+                else:
+                    r, p = np.nan, np.nan
+            if (not np.isnan(r)) and (abs(r) >= 0.7) and (p <= 0.05):
+                rows.append((ncpt_id, rmse, amp_ratio, r, p))
+            res = pd.DataFrame(
+                rows,
+                columns=["NCPT_ID", "RMSE_centered", "amp_ratio(std)", "Pearson_r", "Pearson_p"]
+            )
+            # 排序逻辑：先形状贴合，再幅度接近
+            res["amp_dev"] = (res["amp_ratio(std)"] - 1).abs()
+            res = res.sort_values(
+                ["RMSE_centered", "amp_dev"],
+                ascending=[True, True]
+            )
+            sheet = sanitize_sheetname(evm_id)
+            res.to_excel(writer, sheet_name=sheet, index=False)
+            summary_rows.append({
+                "evm": evm_id,
+                "ncpt_total": len(res),
+                "best_rmse": res["RMSE_centered"].min(),
+                "median_rmse": res["RMSE_centered"].median()
+            })
+        # summary
+        pd.DataFrame(summary_rows).to_excel(writer, sheet_name="SUMMARY", index=False)
+    print(f"Done. Output written to:\n{OUT_FILE}")
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # # 提取基因的Kozak序列

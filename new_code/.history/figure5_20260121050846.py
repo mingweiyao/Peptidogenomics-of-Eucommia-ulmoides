@@ -617,87 +617,13 @@
 #     count_df = read_counts(COUNT_FILE)
 #     normalize_tpm(count_df, length_df, os.path.join(OUT_DIR, "rubber_count_tpm.xlsx"))
 
-# # FPKM标准化
-# import os
-# import pandas as pd
-# import gffutils
-# GFF_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/codon/codon_prediction/codon_prediction_v7/sp_codon.gff"
-# COUNT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_count_5.xlsx"
-# OUT_DIR = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/"
-# def prepare_length_data(gff_file):
-#     db_path = gff_file + ".db"
-#     if not os.path.exists(db_path):
-#         print("🔄 正在创建 GFF 数据库...")
-#         gffutils.create_db(
-#             gff_file,
-#             dbfn=db_path,
-#             force=True,
-#             keep_order=True,
-#             merge_strategy="merge",
-#             id_spec={"gene": "ID", "mRNA": "ID", "CDS": "Parent"},
-#             disable_infer_genes=True,
-#             disable_infer_transcripts=True
-#         )
-#     db = gffutils.FeatureDB(db_path)
-#     gene_lengths = {}
-#     for gene in db.features_of_type("gene"):
-#         total_length = 0
-#         for mrna in db.children(gene, featuretype="mRNA", order_by="start"):
-#             exons = list(db.children(mrna, featuretype="exon", order_by="start"))
-#             if exons:
-#                 mrna_len = sum(e.end - e.start + 1 for e in exons)
-#                 total_length += mrna_len
-#         if total_length > 0:
-#             gene_id = gene.id.replace("evm.model.", "evm.TU.")
-#             gene_lengths[gene_id] = total_length
-#     length_df = pd.DataFrame(gene_lengths.items(), columns=["GeneID", "length"])
-#     out_len = os.path.join(OUT_DIR, "gene_lengths.csv")
-#     length_df.to_csv(out_len, index=False)
-#     print(f"✅ 基因长度表已生成：{out_len}")
-#     return length_df
-# def read_counts(count_file):
-#     if count_file.lower().endswith(".csv"):
-#         df = pd.read_csv(count_file)
-#     else:
-#         df = pd.read_excel(count_file)
-#     if df.columns[0] != "GeneID":
-#         df = df.rename(columns={df.columns[0]: "GeneID"})
-#     # 确保 GeneID 为字符串且去空格
-#     df["GeneID"] = df["GeneID"].astype(str).str.strip()
-#     return df
-# def normalize_fpkm(count_df, length_df, output_file):
-#     length_df = length_df.copy()
-#     length_df["GeneID"] = length_df["GeneID"].astype(str).str.strip()
-#     df = pd.merge(count_df, length_df, on="GeneID", how="inner")
-#     df = df[df["length"] > 0].copy()
-#     sample_cols = [c for c in df.columns if c not in ["GeneID", "length"]]
-#     fpkm_data = {}
-#     for sample in sample_cols:
-#         counts = pd.to_numeric(df[sample], errors="coerce").fillna(0)
-#         N = counts.sum()
-#         if N == 0:
-#             # 全是0时，直接输出0
-#             fpkm = counts * 0.0
-#         else:
-#             L = df["length"].astype(float)  # bp
-#             fpkm = (1e9 * counts) / (N * L)
-#         fpkm_data[sample] = fpkm
-#     fpkm_df = pd.concat([df[["GeneID"]], pd.DataFrame(fpkm_data)], axis=1)
-#     fpkm_df.to_excel(output_file, index=False)
-#     print(f"✅ FPKM 输出完成：{output_file}")
-# if __name__ == "__main__":
-#     os.makedirs(OUT_DIR, exist_ok=True)
-#     length_df = prepare_length_data(GFF_FILE)
-#     count_df = read_counts(COUNT_FILE)
-#     normalize_fpkm(count_df, length_df, os.path.join(OUT_DIR, "rubber_count_5_fpkm.xlsx"))
-
 # # 提取特定基因表达量
 # import pandas as pd
-# id_mapping_df = pd.read_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber.xlsx", sheet_name="Sheet2")
-# data_df = pd.read_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_count_5_fpkm.xlsx")
-# mapped_ids = id_mapping_df['evm_old']
+# id_mapping_df = pd.read_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber.xlsx", sheet_name="Sheet2")
+# data_df = pd.read_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber_count_tpm.xlsx")
+# mapped_ids = id_mapping_df['ID']
 # mapped_df = data_df[data_df['GeneID'].isin(mapped_ids)]
-# mapped_df.to_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_count_5_fpkm_filter.xlsx", index=False)
+# mapped_df.to_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber/rubber_count_tpm_filter.xlsx", index=False)
 
 # # 按group提取pearson子矩阵
 # import os
@@ -706,7 +632,7 @@
 # PEARSON_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/pearson_r_p.xlsx"
 # R_SHEET = "R"
 # P_SHEET = "P"
-# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
+# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP.xlsx"
 # EVM_PREFIX = "evm"
 # NCPT_PREFIX = "NCPT"
 # MAP_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber.xlsx"
@@ -750,7 +676,7 @@
 #             )
 #             out_df["R"] = pd.to_numeric(out_df["R"], errors="coerce")
 #             out_df["P"] = pd.to_numeric(out_df["P"], errors="coerce")
-#             sig_df = out_df[(out_df["R"] >= 0.7) & (out_df["P"] <= 0.05)].copy()
+#             sig_df = out_df[(out_df["R"].abs() >= 0.7) & (out_df["P"] <= 0.05)].copy()
 #             sheet = sanitize_sheetname(evm)
 #             base = sheet
 #             k = 1
@@ -768,8 +694,8 @@
 # # 上个文件的summary
 # import pandas as pd
 # import os
-# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
-# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP_summary.xlsx"
+# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP.xlsx"
+# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP_summary.xlsx"
 # R_COL = "R"
 # def main():
 #     xls = pd.ExcelFile(IN_FILE)
@@ -797,8 +723,8 @@
 # # 上个文件的var
 # import pandas as pd
 # import os
-# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
-# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP_var.xlsx"
+# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP.xlsx"
+# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP_var.xlsx"
 # VAR_COL = "var"
 # def main():
 #     xls = pd.ExcelFile(IN_FILE)
@@ -817,35 +743,59 @@
 # if __name__ == "__main__":
 #     main()
 
-# # 提取不同sheet的表达量
-# import pandas as pd
-# import os
-# import numpy as np
-# in_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
-# expression_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_count_5_fpkm_filter.xlsx"
-# out_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP_fpkm.xlsx"
-# # ========= 读取表达矩阵 =========
-# df_expr = pd.read_excel(expression_file, sheet_name="Sheet1")
-# df_expr["GeneID"] = df_expr["GeneID"].astype(str).str.strip()
-# # ========= 读取相关性文件 =========
-# xls = pd.ExcelFile(in_file)
-# os.makedirs(os.path.dirname(out_file), exist_ok=True)
-# with pd.ExcelWriter(out_file, engine="openpyxl") as writer:
-#     for sheet in xls.sheet_names:
-#         if sheet.upper() == "SUMMARY": continue
-#         df = pd.read_excel(xls, sheet_name=sheet)
-#         if "var" not in df.columns: continue
-#         # 目标基因列表（mubiaoID）
-#         target_ids = (df["var"].astype(str).str.strip().dropna().unique())
-#         # 从表达矩阵中提取
-#         sub_expr = df_expr[df_expr["GeneID"].isin(target_ids)].copy()
-#         # 如果你希望表达量顺序和 var 一致（很重要，默认推荐）
-#         sub_expr["GeneID"] = pd.Categorical(sub_expr["GeneID"], categories=target_ids, ordered=True)
-#         sub_expr = sub_expr.sort_values("GeneID")
-#         expr_cols = sub_expr.columns.difference(["GeneID"])
-#         sub_expr[expr_cols] = np.log2(sub_expr[expr_cols] + 0.1)        
-#         sub_expr.to_excel(writer, sheet_name=sheet[:31], index=False)
-# print(f"Done. Expression data written to:\n{out_file}")
+# 提取不同sheet的表达量
+import pandas as pd
+import os
+import numpy as np
+in_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP.xlsx"
+expression_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_count_5_tpm_filter.xlsx"
+out_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/evm_vs_NCPT_RP_tpm.xlsx"
+# ========= 读取表达矩阵 =========
+df_expr = pd.read_excel(expression_file, sheet_name="Sheet1")
+df_expr["GeneID"] = df_expr["GeneID"].astype(str).str.strip()
+# ========= 读取相关性文件 =========
+xls = pd.ExcelFile(in_file)
+os.makedirs(os.path.dirname(out_file), exist_ok=True)
+with pd.ExcelWriter(out_file, engine="openpyxl") as writer:
+    for sheet in xls.sheet_names:
+        if sheet.upper() == "SUMMARY": continue
+        df = pd.read_excel(xls, sheet_name=sheet)
+        if "var" not in df.columns: continue
+        # 目标基因列表（mubiaoID）
+        target_ids = (df["var"].astype(str).str.strip().dropna().unique())
+        # 从表达矩阵中提取
+        sub_expr = df_expr[df_expr["GeneID"].isin(target_ids)].copy()
+        # 如果你希望表达量顺序和 var 一致（很重要，默认推荐）
+        sub_expr["GeneID"] = pd.Categorical(sub_expr["GeneID"], categories=target_ids, ordered=True)
+        sub_expr = sub_expr.sort_values("GeneID")
+        expr_cols = sub_expr.columns.difference(["GeneID"])
+        sub_expr[expr_cols] = np.log2(sub_expr[expr_cols] + 1)        
+        sub_expr.to_excel(writer, sheet_name=sheet[:31], index=False)
+print(f"Done. Expression data written to:\n{out_file}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
