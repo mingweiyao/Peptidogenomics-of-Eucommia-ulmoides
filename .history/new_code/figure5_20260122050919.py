@@ -553,26 +553,22 @@
 
 # 提取表达量数据
 import pandas as pd
-import numpy as np
 csv_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_gca_pairs_with_pearson_renamed.csv"
 expression_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_count_5_fpkm_filter.xlsx"
-output_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation//output_file_log.xlsx"  # 输出结果的文件路径
+output_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation//output_file.xlsx"  # 输出结果的文件路径
 # 读取CSV文件
 df_csv = pd.read_csv(csv_file)
 # 读取表达量文件
 df_expression = pd.read_excel(expression_file)
 with pd.ExcelWriter(output_file) as writer:
     for annotated_value, group in df_csv.groupby('annotated'):
-        top_novel_group = group.nlargest(min(3, len(group)), 'pearson_r')
+        top_novel_group = group.nlargest(3, 'pearson_r')
         # 提取该组内所有 'novel' 值
         novel_list = top_novel_group['novel'].tolist()
         # 从表达量文件中提取与 'novel' 匹配的表达量数据
-        df_novel_expression = df_expression[df_expression['GeneID'].isin(novel_list)]
+        df_novel_expression = df_expression[df_expression['ID'].isin(novel_list)]
         # 输出每个分组到 Excel 文件的不同 sheet
-        df_novel_expression_log = df_novel_expression.copy()  # 复制数据框，防止修改原数据
-        df_novel_expression_log.iloc[:, 1:] = df_novel_expression_log.iloc[:, 1:].apply(lambda x: np.log2(x + 0.1))  # +1 防止log(0)
-        # 输出每个分组到 Excel 文件的不同 sheet
-        df_novel_expression_log.to_excel(writer, sheet_name=str(annotated_value), index=False)
+        df_novel_expression.to_excel(writer, sheet_name=str(annotated_value), index=False)
 print("数据已经成功输出到 Excel 文件中。")
 
 # # TPM标准化

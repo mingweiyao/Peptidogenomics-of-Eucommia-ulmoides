@@ -540,40 +540,16 @@
 
 # # 提取相关肽的信息，用于肽分类的构建
 # import pandas as pd
-# id_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_gca_pairs_with_pearson_renamed.csv"
-# temp_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/codon/codon_prediction/codon_prediction_v7/candidates_scored.xlsx"
-# expression_info = "/Volumes/caca/work_mechanism/new_file/01location/rnaseq/03ouput/finally_expressed_sp_info.xlsx"
-# df_id = pd.read_csv(id_file)
+# id_file = r"F:\work_mechanism\new_file\02figure\figure5\rubber\deseq_analysis_diff.xlsx"
+# temp_file = r"F:\work_mechanism\new_file\02figure\figure5\codon\codon_prediction\codon_prediction_v7\candidates_scored.xlsx"
+# expression_info = r"F:\work_mechanism\new_file\01location\rnaseq\03ouput\finally_expressed_sp_info.xlsx"
+# df_id = pd.read_excel(id_file, sheet_name="Sheet2")
 # temp_file_df = pd.read_excel(temp_file)
 # df_express = pd.read_excel(expression_info, sheet_name="unique")
 # id_list = df_id['name']
 # id_temp = temp_file_df[temp_file_df['ID'].isin(id_list)]
 # id_express = df_express[df_express['ID'].isin(id_temp['pep_id'])]
-# id_express.to_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/WGCNA/deseq_analysis_diff_pep_info.xlsx", index=False)
-
-# 提取表达量数据
-import pandas as pd
-import numpy as np
-csv_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_gca_pairs_with_pearson_renamed.csv"
-expression_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_count_5_fpkm_filter.xlsx"
-output_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation//output_file_log.xlsx"  # 输出结果的文件路径
-# 读取CSV文件
-df_csv = pd.read_csv(csv_file)
-# 读取表达量文件
-df_expression = pd.read_excel(expression_file)
-with pd.ExcelWriter(output_file) as writer:
-    for annotated_value, group in df_csv.groupby('annotated'):
-        top_novel_group = group.nlargest(min(3, len(group)), 'pearson_r')
-        # 提取该组内所有 'novel' 值
-        novel_list = top_novel_group['novel'].tolist()
-        # 从表达量文件中提取与 'novel' 匹配的表达量数据
-        df_novel_expression = df_expression[df_expression['GeneID'].isin(novel_list)]
-        # 输出每个分组到 Excel 文件的不同 sheet
-        df_novel_expression_log = df_novel_expression.copy()  # 复制数据框，防止修改原数据
-        df_novel_expression_log.iloc[:, 1:] = df_novel_expression_log.iloc[:, 1:].apply(lambda x: np.log2(x + 0.1))  # +1 防止log(0)
-        # 输出每个分组到 Excel 文件的不同 sheet
-        df_novel_expression_log.to_excel(writer, sheet_name=str(annotated_value), index=False)
-print("数据已经成功输出到 Excel 文件中。")
+# id_express.to_excel(r"F:\work_mechanism\new_file\02figure\figure5\rubber\deseq_analysis_diff_pep_info.xlsx", index=False)
 
 # # TPM标准化
 # import os
@@ -821,9 +797,9 @@ print("数据已经成功输出到 Excel 文件中。")
 # # 上个文件的var
 # import pandas as pd
 # import os
-# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/output_file.xlsx"
-# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/output_file_geneid.xlsx"
-# VAR_COL = "GeneID"
+# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP.xlsx"
+# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/position_evm_vs_NCPT_RP_var.xlsx"
+# VAR_COL = "var"
 # def main():
 #     xls = pd.ExcelFile(IN_FILE)
 #     cols = {}
@@ -871,33 +847,33 @@ print("数据已经成功输出到 Excel 文件中。")
 #         sub_expr.to_excel(writer, sheet_name=sheet[:31], index=False)
 # print(f"Done. Expression data written to:\n{out_file}")
 
-# # ID 替换
-# import pandas as pd
-# IN_CSV = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/WGCNA/rubber_gca_pairs_with_pearson.csv"
-# MAP_XLS = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber.xlsx"
-# OUT_CSV = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_gca_pairs_with_pearson_renamed.csv"
-# # ====== 读取结果 CSV ======
-# df = pd.read_csv(IN_CSV, dtype=str)
-# # ====== 读取映射表 ======
-# map_df = pd.read_excel(MAP_XLS, sheet_name="Sheet2", dtype=str)
-# # 只取前两列并重命名（防止 Excel 多余列）
-# map_df = map_df.iloc[:, :2]
-# map_df.columns = ["evm_old", "evm_new"]
-# # 去空格
-# map_df["evm_old"] = map_df["evm_old"].str.strip()
-# map_df["evm_new"] = map_df["evm_new"].str.strip()
-# # 构建映射字典
-# id_map = dict(zip(map_df["evm_old"], map_df["evm_new"]))
-# # ====== 替换 annotated ======
-# df["annotated_original"] = df["annotated"]   # 保留原始 ID（推荐）
-# df["annotated"] = df["annotated"].map(
-#     lambda x: id_map.get(x, x)
-# )
-# # ====== 输出 ======
-# df.to_csv(OUT_CSV, index=False)
-# print("✅ Annotated IDs replaced.")
-# print(f"Input : {IN_CSV}")
-# print(f"Output: {OUT_CSV}")
+# ID 替换
+import pandas as pd
+IN_CSV = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/WGCNA/rubber_gca_pairs_with_pearson.csv"
+MAP_XLS = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber.xlsx"
+OUT_CSV = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_gca_pairs_with_pearson_renamed.csv"
+# ====== 读取结果 CSV ======
+df = pd.read_csv(IN_CSV, dtype=str)
+# ====== 读取映射表 ======
+map_df = pd.read_excel(MAP_XLS, sheet_name="Sheet2", dtype=str)
+# 只取前两列并重命名（防止 Excel 多余列）
+map_df = map_df.iloc[:, :2]
+map_df.columns = ["evm_old", "evm_new"]
+# 去空格
+map_df["evm_old"] = map_df["evm_old"].str.strip()
+map_df["evm_new"] = map_df["evm_new"].str.strip()
+# 构建映射字典
+id_map = dict(zip(map_df["evm_old"], map_df["evm_new"]))
+# ====== 替换 annotated ======
+df["annotated_original"] = df["annotated"]   # 保留原始 ID（推荐）
+df["annotated"] = df["annotated"].map(
+    lambda x: id_map.get(x, x)
+)
+# ====== 输出 ======
+df.to_csv(OUT_CSV, index=False)
+print("✅ Annotated IDs replaced.")
+print(f"Input : {IN_CSV}")
+print(f"Output: {OUT_CSV}")
 
 
 
