@@ -621,7 +621,7 @@ df["GeneID"] = df["GeneID"].map(
     lambda x: id_map.get(x, x)
 )
 # ====== 输出 ======
-df.to_excel(OUT_CSV, index=False)
+df.to_csv(OUT_CSV, index=False)
 print("✅ Annotated IDs replaced.")
 print(f"Input : {IN_CSV}")
 print(f"Output: {OUT_CSV}")

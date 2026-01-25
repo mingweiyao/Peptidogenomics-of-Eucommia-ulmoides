@@ -1,0 +1,209 @@
+# ====== 整合版 WGCNA 分析脚本 ======
+library(WGCNA)
+library(reshape2)
+library(dplyr)
+library(stringr)
+options(stringsAsFactors = FALSE)
+
+# ==== Step 1: 数据准备 ====
+exprMat <- "/data/Eu/WGCNA/dt_st_count_fpkm.txt"
+outputDir <- "/data/Eu/WGCNA/dt_st_trait"
+dir.create(outputDir, showWarnings = FALSE)
+dataExpr <- read.table(exprMat, sep='\t', row.names=1, header=TRUE, quote="", comment.char="")
+dataExpr <- as.data.frame(t(dataExpr))
+allGenes <- colnames(dataExpr)
+
+# 过滤表达恒定的基因
+m.mad <- apply(dataExpr, 2, mad)
+dataExpr <- dataExpr[, m.mad > 0]
+
+# 检查样本/基因质量
+gsg <- goodSamplesGenes(dataExpr, verbose = 3)
+if (!gsg$allOK) {
+  dataExpr <- dataExpr[gsg$goodSamples, gsg$goodGenes]
+}
+nSamples = nrow(dataExpr)
+
+# ==== Step 2: 样本聚类图 ====
+pdf(file.path(outputDir, "sample_clustering.pdf"),  width = 15, height = 8)
+sampleTree <- hclust(dist(dataExpr), method = "average")
+plot(sampleTree, main = "Sample clustering to detect outliers", sub="", xlab="")
+dev.off()
+
+# ==== Step 3: 选择软阈值 ====
+powers <- c(1:10, seq(12, 30, 2))
+sft <- pickSoftThreshold(dataExpr, powerVector = powers, verbose = 5)
+pdf(file.path(outputDir, "soft_thresholding.pdf"))
+par(mfrow = c(1,2))
+cex1 = 0.9
+plot(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+     xlab="Soft Threshold (power)", ylab="Scale Free Topology Model Fit, signed R^2", type="n",
+     main = "Scale independence")
+text(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2], labels=powers, cex=cex1, col="red")
+abline(h=0.8, col="red")
+plot(sft$fitIndices[,1], sft$fitIndices[,5],
+     xlab="Soft Threshold (power)", ylab="Mean Connectivity", type="n",
+     main = "Mean connectivity")
+text(sft$fitIndices[,1], sft$fitIndices[,5], labels=powers, cex=cex1, col="red")
+dev.off()
+
+# ==== Step 4: 构建网络并识别模块 ====
+# softPower <- sft$powerEstimate
+softPower <- 16
+enableWGCNAThreads()
+net <- blockwiseModules(
+  dataExpr,
+  power = softPower,
+  maxBlockSize = ncol(dataExpr),
+  TOMType = "signed",
+  networkType = "signed",
+  minModuleSize = 200,
+  mergeCutHeight = 0.4,
+  deepSplit = 0,
+  reassignThreshold = 0,
+  numericLabels = TRUE,
+  pamRespectsDendro = TRUE,
+  saveTOMs = TRUE,
+  saveTOMFileBase = file.path(outputDir, "finalTOM"),
+  verbose = 3
+)
+moduleColors <- labels2colors(net$colors)
+
+# ==== Step 5: 模块树状图 ====
+pdf(file.path(outputDir, "module_dendrogram.pdf"))
+plotDendroAndColors(net$dendrograms[[1]], moduleColors[net$blockGenes[[1]]],
+                    "Module colors", dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05)
+dev.off()
+table(moduleColors)
+
+# ==== Step 6: 模块相关性 ====
+MEs = net$MEs
+MEs_col = MEs
+colnames(MEs_col) = paste0("ME", labels2colors(
+  as.numeric(str_replace_all(colnames(MEs),"ME",""))))
+MEs_col = orderMEs(MEs_col)
+pdf(file.path(outputDir, "module_correlation.pdf"))
+plotEigengeneNetworks(MEs_col, "Eigengene adjacency heatmap",
+                      marDendro = c(3,3,2,4),
+                      marHeatmap = c(3,4,2,2), plotDendrograms = T,
+                      xLabelsAngle = 90)
+dev.off()
+trait <- "/data/Eu/WGCNA/dt_st_trait.txt"
+if(trait != "") {
+  traitData <- read.table(file=trait, sep='\t', header=T, row.names=1,
+                          check.names=FALSE, comment='',quote="")
+  sampleName = rownames(dataExpr)
+  traitData = traitData[match(sampleName, rownames(traitData)), ]
+}
+MEs_colpheno = orderMEs(cbind(MEs_col, traitData))
+pdf(file.path(outputDir, "module_correlation_tissues.pdf"))
+plotEigengeneNetworks(MEs_colpheno, "Eigengene adjacency heatmap",
+                      marDendro = c(3,3,2,4),
+                      marHeatmap = c(3,4,2,2), plotDendrograms = T,
+                      xLabelsAngle = 90)
+dev.off()
+
+# ==== Step 7: 关联表型数据====
+modTraitCor = cor(MEs_col, traitData, use = "p")
+modTraitP = corPvalueStudent(modTraitCor, nSamples)
+textMatrix = paste(signif(modTraitCor, 2), "\n(", signif(modTraitP, 1), ")", sep = "")
+dim(textMatrix) = dim(modTraitCor)
+pdf(file.path(outputDir, "module_trait_relationships.pdf"), width = 10, height = 10)
+par(mar = c(6, 12, 3, 2))
+labeledHeatmap(
+  Matrix = modTraitCor,
+  xLabels = colnames(traitData),
+  yLabels = names(MEs_col),
+  ySymbols = names(MEs_col),
+  colorLabels = FALSE,
+  colors = blueWhiteRed(50),
+  textMatrix = textMatrix,
+  setStdMargins = FALSE,
+  cex.lab = 1.0,
+  cex.text = 0.9,
+  zlim = c(-1,1),
+  main = "Module-trait relationships"
+)
+dev.off()
+
+# ==== Step 8: hub gene====
+hubDir <- file.path(outputDir, "hub_genes")
+if (!dir.exists(hubDir)) dir.create(hubDir)
+moduleList <- unique(moduleColors)
+moduleList <- moduleList[moduleList != "grey"]
+for (traitName in colnames(traitData)) {
+  traitVec <- traitData[[traitName]]
+  for (module in moduleList) {
+    moduleGenes <- moduleColors == module
+    geneNames <- colnames(dataExpr)
+    hubGenes <- geneNames[moduleGenes]
+    if (length(hubGenes) > 0) {
+      outFile <- file.path(hubDir, paste0("genes_", module, "_trait_", traitName, ".txt"))
+      write.table(hubGenes, file = outFile, quote = FALSE, row.names = FALSE, col.names = FALSE)
+    }
+  }
+}
+
+# ==== Step 9: hub gene====
+MM.threshold <- 0.8
+hubDir <- file.path(outputDir, "hub_genes_by_MM")
+if (!dir.exists(hubDir)) dir.create(hubDir, recursive = TRUE)
+moduleList <- unique(moduleColors)
+moduleList <- moduleList[moduleList != "grey"]
+for (module in moduleList) {
+  moduleGenes <- moduleColors == module
+  MEname <- paste0("ME", module)
+  MM <- as.numeric(cor(dataExpr, MEs_col[, MEname], use = "p"))
+  names(MM) <- colnames(dataExpr)
+  isHub <- abs(MM) >= MM.threshold
+  hubGenes <- names(MM)[isHub]
+  if (length(hubGenes) > 0) {
+    hubGenes <- hubGenes[order(-abs(MM[hubGenes]))]
+    resultDF <- data.frame(
+      Gene = hubGenes,
+      Module = module,
+      MM = MM[hubGenes],
+      stringsAsFactors = FALSE
+    )
+    outFile <- file.path(hubDir, paste0("hubGenes_", module, ".txt"))
+    write.table(resultDF, file = outFile, sep = "\t", quote = FALSE, row.names = FALSE)
+  }
+}
+
+# ==== Step 10: hub gene====
+MM.threshold <- 0.8
+GS.threshold <- 0.3
+hubDir <- file.path(outputDir, "hub_genes_by_MM_GS")
+if (!dir.exists(hubDir)) dir.create(hubDir)
+moduleList <- unique(moduleColors)
+moduleList <- moduleList[moduleList != "grey"]
+for (traitName in colnames(traitData)) {
+  traitVec <- traitData[[traitName]]
+  for (module in moduleList) {
+    moduleGenes <- moduleColors == module
+    geneNames <- colnames(dataExpr)
+    GS <- as.numeric(cor(dataExpr, traitVec, use = "p"))
+    names(GS) <- geneNames
+    MEname <- paste0("ME", module)
+    MM <- as.numeric(cor(dataExpr, MEs_col[, MEname], use = "p"))
+    names(MM) <- geneNames
+    isHub <- moduleGenes & abs(MM) > MM.threshold & abs(GS) > GS.threshold
+    hubGenes <- geneNames[isHub]
+    if (length(hubGenes) > 0) {
+      outFile <- file.path(hubDir, paste0("hubGenes_", module, "_trait_", traitName, ".txt"))
+      write.table(hubGenes, file = outFile, quote = FALSE, row.names = FALSE, col.names = FALSE)
+    }
+  }
+}
+
+# ==== Step 14: 可视化基因网络====
+dissTOM = 1-TOM
+plotTOM = dissTOM^7
+diag(plotTOM) = NA
+pdf(file.path(outputDir, "TOM_plot.pdf"))
+TOMplot(plotTOM, net$dendrograms, moduleColors,
+        main = "Network heatmap plot, all genes")
+dev.off()
+
+message("✅ 分析完成：所有输出保存在 'WGCNA_Results' 文件夹下")

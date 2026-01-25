@@ -616,12 +616,12 @@ map_df["evm_new"] = map_df["evm_new"].str.strip()
 # 构建映射字典
 id_map = dict(zip(map_df["evm_old"], map_df["evm_new"]))
 # ====== 替换 annotated ======
-df["GeneID_original"] = df["GeneID"]   # 保留原始 ID（推荐）
-df["GeneID"] = df["GeneID"].map(
+df["annotated_original"] = df["annotated"]   # 保留原始 ID（推荐）
+df["annotated"] = df["annotated"].map(
     lambda x: id_map.get(x, x)
 )
 # ====== 输出 ======
-df.to_excel(OUT_CSV, index=False)
+df.to_csv(OUT_CSV, index=False)
 print("✅ Annotated IDs replaced.")
 print(f"Input : {IN_CSV}")
 print(f"Output: {OUT_CSV}")

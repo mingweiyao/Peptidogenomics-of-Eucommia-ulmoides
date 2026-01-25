@@ -281,7 +281,7 @@
 import pandas as pd
 id_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure6/veen_analysis.xlsx"
 expression_file = "/Volumes/caca/work_mechanism/new_file/02figure/figure6/WGCNA/dt_st_count_fpkm.xlsx"
-df_id = pd.read_excel(id_file, sheet_name="st")
+df_id = pd.read_excel(id_file, sheet_name="dt")
 expression_file = pd.read_excel(expression_file)
 target_df = expression_file[expression_file["GeneID"].isin(df_id["ID"])]
-target_df.to_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure6/st_fpkm.xlsx", index=False)
+target_df.to_excel("/Volumes/caca/work_mechanism/new_file/02figure/figure6/dt_fpkm.xlsx", index=False)

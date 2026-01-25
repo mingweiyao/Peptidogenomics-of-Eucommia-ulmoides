@@ -575,57 +575,28 @@
 #         df_novel_expression_log.to_excel(writer, sheet_name=str(annotated_value), index=False)
 # print("数据已经成功输出到 Excel 文件中。")
 
-# # 上个文件的var
-# import pandas as pd
-# import os
-# IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/WGCNA/rename_fpkm_all_log.xlsx"
-# OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/WGCNA/rename_fpkm_all_log_geneid.xlsx"
-# VAR_COL = "GeneID"
-# def main():
-#     xls = pd.ExcelFile(IN_FILE)
-#     cols = {}
-#     for sheet in xls.sheet_names:
-#         df = pd.read_excel(xls, sheet_name=sheet)
-#         if VAR_COL not in df.columns: continue
-#         s = df[VAR_COL].dropna().astype(str).reset_index(drop=True)
-#         cols[sheet] = s
-#     out_df = pd.DataFrame(cols)
-#     out_df = out_df.reindex(sorted(out_df.columns), axis=1)
-#     os.makedirs(os.path.dirname(OUT_FILE), exist_ok=True)
-#     out_df.to_excel(OUT_FILE, index=False)
-#     print(f"Done. Output written to:\n{OUT_FILE}")
-#     print(f"Sheets included: {len(out_df.columns)}")
-# if __name__ == "__main__":
-#     main()
-
-# ID 替换
+# 上个文件的var
 import pandas as pd
-IN_CSV = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber_count_5_fpkm_filter.xlsx"
-MAP_XLS = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber.xlsx"
-OUT_CSV = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber_count_5_fpkm_filter_renamed.xlsx"
-# ====== 读取结果 CSV ======
-df = pd.read_excel(IN_CSV, sheet_name="Sheet2")
-# ====== 读取映射表 ======
-map_df = pd.read_excel(MAP_XLS, sheet_name="Sheet2", dtype=str)
-# 只取前两列并重命名（防止 Excel 多余列）
-map_df = map_df.iloc[:, :2]
-map_df.columns = ["evm_old", "evm_new"]
-# 去空格
-map_df["evm_old"] = map_df["evm_old"].str.strip()
-map_df["evm_new"] = map_df["evm_new"].str.strip()
-# 构建映射字典
-id_map = dict(zip(map_df["evm_old"], map_df["evm_new"]))
-# ====== 替换 annotated ======
-df["GeneID_original"] = df["GeneID"]   # 保留原始 ID（推荐）
-df["GeneID"] = df["GeneID"].map(
-    lambda x: id_map.get(x, x)
-)
-# ====== 输出 ======
-df.to_excel(OUT_CSV, index=False)
-print("✅ Annotated IDs replaced.")
-print(f"Input : {IN_CSV}")
-print(f"Output: {OUT_CSV}")
-
+import os
+IN_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/WGCNA/rename_fpkm_all_log.xlsx"
+OUT_FILE = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/WGCNA/rename_fpkm_all_log_geneid.xlsx"
+VAR_COL = "GeneID"
+def main():
+    xls = pd.ExcelFile(IN_FILE)
+    cols = {}
+    for sheet in xls.sheet_names:
+        df = pd.read_excel(xls, sheet_name=sheet)
+        if VAR_COL not in df.columns: continue
+        s = df[VAR_COL].dropna().astype(str).reset_index(drop=True)
+        cols[sheet] = s
+    out_df = pd.DataFrame(cols)
+    out_df = out_df.reindex(sorted(out_df.columns), axis=1)
+    os.makedirs(os.path.dirname(OUT_FILE), exist_ok=True)
+    out_df.to_excel(OUT_FILE, index=False)
+    print(f"Done. Output written to:\n{OUT_FILE}")
+    print(f"Sheets included: {len(out_df.columns)}")
+if __name__ == "__main__":
+    main()
 
 # # TPM标准化
 # import os
@@ -922,6 +893,38 @@ print(f"Output: {OUT_CSV}")
 #         sub_expr[expr_cols] = np.log2(sub_expr[expr_cols] + 0.1)        
 #         sub_expr.to_excel(writer, sheet_name=sheet[:31], index=False)
 # print(f"Done. Expression data written to:\n{out_file}")
+
+# # ID 替换
+# import pandas as pd
+# IN_CSV = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/WGCNA/rubber_gca_pairs_with_pearson.csv"
+# MAP_XLS = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber.xlsx"
+# OUT_CSV = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/correlation/rubber_gca_pairs_with_pearson_renamed.csv"
+# # ====== 读取结果 CSV ======
+# df = pd.read_csv(IN_CSV, dtype=str)
+# # ====== 读取映射表 ======
+# map_df = pd.read_excel(MAP_XLS, sheet_name="Sheet2", dtype=str)
+# # 只取前两列并重命名（防止 Excel 多余列）
+# map_df = map_df.iloc[:, :2]
+# map_df.columns = ["evm_old", "evm_new"]
+# # 去空格
+# map_df["evm_old"] = map_df["evm_old"].str.strip()
+# map_df["evm_new"] = map_df["evm_new"].str.strip()
+# # 构建映射字典
+# id_map = dict(zip(map_df["evm_old"], map_df["evm_new"]))
+# # ====== 替换 annotated ======
+# df["annotated_original"] = df["annotated"]   # 保留原始 ID（推荐）
+# df["annotated"] = df["annotated"].map(
+#     lambda x: id_map.get(x, x)
+# )
+# # ====== 输出 ======
+# df.to_csv(OUT_CSV, index=False)
+# print("✅ Annotated IDs replaced.")
+# print(f"Input : {IN_CSV}")
+# print(f"Output: {OUT_CSV}")
+
+
+
+
 
 
 # # 提取基因的Kozak序列
