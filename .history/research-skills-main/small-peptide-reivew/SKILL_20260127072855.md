@@ -1,0 +1,119 @@
+---
+name: plant-peptide-identification-review
+description: Write comprehensive literature reviews on plant small peptide identification (2016–2029), covering discovery from coding and non-coding regions, translation evidence (Ribo-seq / start codons), proteomics detection, and functional validation evidence chains. Use when writing review papers, surveys, or systematic literature analyses in plant peptide discovery.
+triggers:
+  - "/plant-peptide-identification-review"
+  - "植物小肽综述"
+  - "植物小肽鉴定"
+  - "smORF peptide review"
+  - "micropeptide discovery"
+  - "ribosome profiling plant peptide"
+  - "非AUG起始 小肽"
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash
+  - WebSearch
+  - WebFetch
+  - TodoWrite
+---
+
+# Plant Small Peptides Identification Literature Review Skill (2016–2029)
+
+A systematic workflow for writing comprehensive literature reviews focused on **plant small peptide identification and discovery pipelines**.
+
+This skill supports:
+- canonical coding-region peptides
+- non-canonical ORF peptides (smORFs in lncRNAs/UTRs/intergenic transcripts)
+- translation initiation diversity (AUG and near-cognate start codons)
+- proteomics/peptidomics confirmation
+- functional validation as downstream evidence
+
+---
+
+## Quick Start
+
+When the user requests a literature review:
+
+1. **Initialize project** with three core files:
+   - `CLAUDE.md` - Writing guidelines, terminology, evidence-level framework (L1–L5)
+   - `IMPLEMENTATION_PLAN.md` - 7-phase staged execution plan
+   - `manuscript_draft.md` - Main manuscript draft
+
+2. **Follow the 7 phases** defined in IMPLEMENTATION_PLAN.md”
+
+3. **Use the tables/figure placeholders** in manuscript_draft.md and the table templates in DOMAINS.md”
+   - Replace medical-imaging-specific metrics with evidence-level scoring and method comparison tables.
+
+---
+
+## Core Principles
+
+### Writing Style
+- Use **hedging language**: "may", "suggests", "appears to", "has been associated with"
+- Avoid absolute claims: Never say "X proves..." unless supported by multi-level evidence + functional validation
+- Every claim should be supported with citations
+- Each major method category needs a **Limitations** paragraph
+
+### Required Elements (Plant Peptide Discovery Version)
+- **Key Points box** (3–5 bullets) after title
+- **Comparison table** for each major section (discovery methods, translation evidence, proteomics evidence)
+- **Evidence-level framework** applied consistently (L1–L5)
+- **Figure placeholders** with detailed captions (pipeline, evidence pyramid, timeline)
+- **References organized by topic** (80–120 typical)
+
+### Evidence Level Framework (Mandatory)
+Use the following standardized evidence chain:
+
+- **L1: Computational prediction** (ORF prediction, conservation, motif)
+- **L2: Transcription evidence** (RNA-seq / expression)
+- **L3: Translation evidence** (Ribo-seq, initiation profiling)
+- **L4: Peptide detection evidence** (LC–MS/MS proteomics/peptidomics)
+- **L5: Functional validation** (genetics, synthetic peptide assays, rescue/binding)
+
+---
+
+## Recommended Review Structure
+
+```markdown
+# [Title]: Identification and Discovery of Plant Small Peptides (2016–2029)
+
+## Key Points
+- [3-5 bullets summarizing main findings]
+
+## Abstract
+
+## 1. Introduction
+### 1.1 Biological context
+### 1.2 Identification challenges
+### 1.3 Scope and contributions
+
+## 2. Definitions and Evidence Framework
+### 2.1 Definitions and taxonomy
+### 2.2 Evidence levels (L1–L5)
+
+## 3. Identification Pipelines (Core)
+### 3.1 Computational discovery (L1)
+### 3.2 Coding-region peptides
+### 3.3 Non-canonical ORFs and non-coding regions
+### 3.4 Translation evidence (Ribo-seq) (L3)
+### 3.5 Proteomics/peptidomics detection (L4)
+### 3.6 Integrated multi-omics scoring
+
+## 4. Translation Initiation and Start Codon Diversity
+### 4.1 AUG initiation
+### 4.2 Near-cognate start codons
+### 4.3 Identification bias and implications
+
+## 5. Functional Validation (Downstream)
+### 5.1 Functional categories
+### 5.2 Validation pipelines and best practices
+
+## 6. Resources and Databases
+## 7. Challenges and Future Directions
+## 8. Conclusion
+
+## References

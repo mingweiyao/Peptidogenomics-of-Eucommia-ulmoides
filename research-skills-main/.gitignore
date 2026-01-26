@@ -1,0 +1,15 @@
+# Temporary files
+tmpclaude-*
+*.tmp
+*.temp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node modules
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
