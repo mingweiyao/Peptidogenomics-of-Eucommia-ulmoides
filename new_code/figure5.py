@@ -598,33 +598,33 @@
 # if __name__ == "__main__":
 #     main()
 
-# ID 替换
-import pandas as pd
-IN_CSV = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber_count_5_fpkm_filter.xlsx"
-MAP_XLS = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber.xlsx"
-OUT_CSV = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber_count_5_fpkm_filter_renamed.xlsx"
-# ====== 读取结果 CSV ======
-df = pd.read_excel(IN_CSV, sheet_name="Sheet2")
-# ====== 读取映射表 ======
-map_df = pd.read_excel(MAP_XLS, sheet_name="Sheet2", dtype=str)
-# 只取前两列并重命名（防止 Excel 多余列）
-map_df = map_df.iloc[:, :2]
-map_df.columns = ["evm_old", "evm_new"]
-# 去空格
-map_df["evm_old"] = map_df["evm_old"].str.strip()
-map_df["evm_new"] = map_df["evm_new"].str.strip()
-# 构建映射字典
-id_map = dict(zip(map_df["evm_old"], map_df["evm_new"]))
-# ====== 替换 annotated ======
-df["GeneID_original"] = df["GeneID"]   # 保留原始 ID（推荐）
-df["GeneID"] = df["GeneID"].map(
-    lambda x: id_map.get(x, x)
-)
-# ====== 输出 ======
-df.to_excel(OUT_CSV, index=False)
-print("✅ Annotated IDs replaced.")
-print(f"Input : {IN_CSV}")
-print(f"Output: {OUT_CSV}")
+# # ID 替换
+# import pandas as pd
+# IN_CSV = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber_count_5_fpkm_filter.xlsx"
+# MAP_XLS = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber.xlsx"
+# OUT_CSV = "/Volumes/caca/work_mechanism/new_file/02figure/figure5/rubber/rubber_count_5_fpkm_filter_renamed.xlsx"
+# # ====== 读取结果 CSV ======
+# df = pd.read_excel(IN_CSV, sheet_name="Sheet2")
+# # ====== 读取映射表 ======
+# map_df = pd.read_excel(MAP_XLS, sheet_name="Sheet2", dtype=str)
+# # 只取前两列并重命名（防止 Excel 多余列）
+# map_df = map_df.iloc[:, :2]
+# map_df.columns = ["evm_old", "evm_new"]
+# # 去空格
+# map_df["evm_old"] = map_df["evm_old"].str.strip()
+# map_df["evm_new"] = map_df["evm_new"].str.strip()
+# # 构建映射字典
+# id_map = dict(zip(map_df["evm_old"], map_df["evm_new"]))
+# # ====== 替换 annotated ======
+# df["GeneID_original"] = df["GeneID"]   # 保留原始 ID（推荐）
+# df["GeneID"] = df["GeneID"].map(
+#     lambda x: id_map.get(x, x)
+# )
+# # ====== 输出 ======
+# df.to_excel(OUT_CSV, index=False)
+# print("✅ Annotated IDs replaced.")
+# print(f"Input : {IN_CSV}")
+# print(f"Output: {OUT_CSV}")
 
 
 # # TPM标准化
@@ -1233,3 +1233,58 @@ print(f"Output: {OUT_CSV}")
 #     for c in codons:
 #         sub = df.loc[codon_series.str.contains(c, regex=False), SEQ_COL]
 #         count_matrix(sub, L=L).to_excel(writer, sheet_name=c)    
+
+
+
+
+# # 提取功能NCP的信息
+# import pandas as pd
+# # ====== 配置区：按需改文件名/输出名 ======
+# id_path = r"F:\work_mechanism\new_file\02figure\figure6\dt_target.xlsx"
+# cand_path = r"F:\work_mechanism\new_file\02figure\figure5\candidates_scored.xlsx"
+# out_path = r"F:\work_mechanism\new_file\02figure\figure6\id_with_candidates_st.xlsx"
+# # ====== 读取数据 ======
+# id_df = pd.read_excel(id_path, sheet_name="st_id")
+# cand_df = pd.read_excel(cand_path)
+# # ====== 基础校验 ======
+# required_id_cols = ["name"]
+# required_cand_cols = ["ID", "strand", "chrom", "pep_id", "cross_exon"]
+# missing_id = [c for c in required_id_cols if c not in id_df.columns]
+# missing_cand = [c for c in required_cand_cols if c not in cand_df.columns]
+# if missing_id:
+#     raise ValueError(f"{id_path} 缺少列: {missing_id}")
+# if missing_cand:
+#     raise ValueError(f"{cand_path} 缺少列: {missing_cand}")
+# # ====== 关键：统一类型，避免 00123 vs 123 这种匹配失败 ======
+# id_df["name"] = id_df["name"].astype(str).str.strip()
+# cand_df["ID"] = cand_df["ID"].astype(str).str.strip()
+# # ====== 取需要的列，按 novel -> ID 做 left join ======
+# cand_sub = cand_df[["ID", "strand", "chrom", "pep_id", "cross_exon"]].copy()
+# merged = id_df.merge(cand_sub, how="left", left_on="name", right_on="ID")
+# # 如果你不想保留右侧的 ID 列（匹配用的），删掉它：
+# merged.drop(columns=["ID"], inplace=True)
+# # ====== 输出 ======
+# merged.to_excel(out_path, index=False)
+# print(f"完成：已输出 {out_path}，行数={len(merged)}，匹配到的行数={(merged[['strand','chrom','pep_id','cross_exon']].notna().any(axis=1)).sum()}")
+
+
+
+
+from Bio import SeqIO
+input_fasta = r"F:\work_mechanism\new_file\02figure\Eu_genome_modified\Eu_genome.fasta"
+for record in SeqIO.parse(input_fasta, "fasta"):
+    if record.id == "GWHBISF00000496":
+        target_seq = record.seq[9266489:9266630]
+        target_seq_reverse = target_seq.reverse_complement()
+        target_seq_reverse_translate = target_seq_reverse.translate()
+        print(target_seq_reverse_translate)
+        protein_seq = str(target_seq_reverse_translate)
+        find_seq = "MAMVDPLMDGEGR"
+        start = protein_seq.find(find_seq) - 3
+        if start != -1: end = start + len(find_seq) + 20
+        
+        dna_start = start * 3
+        dna_end = end * 3 + 3
+        dna_seq = target_seq_reverse[dna_start:dna_end]
+        print(dna_seq)
+        print(dna_seq.translate())
