@@ -1269,22 +1269,40 @@
 
 
 
-
 from Bio import SeqIO
-input_fasta = r"F:\work_mechanism\new_file\02figure\Eu_genome_modified\Eu_genome.fasta"
+input_fasta = r"F:\work_mechanism\new_file\02figure\figure5\new_transcript\hit_transcripts.fa"
 for record in SeqIO.parse(input_fasta, "fasta"):
-    if record.id == "GWHBISF00000496":
-        target_seq = record.seq[9266489:9266630]
+    if record.id == "MSTRG.23240.1":
+        target_seq = record.seq[209:329]
         target_seq_reverse = target_seq.reverse_complement()
         target_seq_reverse_translate = target_seq_reverse.translate()
         print(target_seq_reverse_translate)
         protein_seq = str(target_seq_reverse_translate)
-        find_seq = "MAMVDPLMDGEGR"
-        start = protein_seq.find(find_seq) - 3
-        if start != -1: end = start + len(find_seq) + 20
+        find_seq = "SGLFDSITSGGSLGMD"
+        start = protein_seq.find(find_seq)-1
+        if start != -1: end = start + len(find_seq) + 50
         
         dna_start = start * 3
         dna_end = end * 3 + 3
         dna_seq = target_seq_reverse[dna_start:dna_end]
         print(dna_seq)
         print(dna_seq.translate())
+
+# from Bio import SeqIO
+# input_fasta = r"F:\work_mechanism\new_file\02figure\Eu_genome_modified\Eu_genome.fasta"
+# for record in SeqIO.parse(input_fasta, "fasta"):
+#     if record.id == "GWHBISF00000496":
+#         target_seq = record.seq[9266489:9266630]
+#         target_seq_reverse = target_seq.reverse_complement()
+#         target_seq_reverse_translate = target_seq_reverse.translate()
+#         print(target_seq_reverse_translate)
+#         protein_seq = str(target_seq_reverse_translate)
+#         find_seq = "MAMVDPLMDGEGR"
+#         start = protein_seq.find(find_seq) - 3
+#         if start != -1: end = start + len(find_seq) + 20
+        
+#         dna_start = start * 3
+#         dna_end = end * 3 + 3
+#         dna_seq = target_seq_reverse[dna_start:dna_end]
+#         print(dna_seq)
+#         print(dna_seq.translate())

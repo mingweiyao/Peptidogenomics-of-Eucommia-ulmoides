@@ -7,7 +7,7 @@ import pandas as pd
 import gffutils
 GFF_FILE = r"F:\CF\Tks_2021.gff"
 COUNT_FILE = r"F:\CF\merged_counts.xlsx"
-OUT_DIR = r"F:\CF\normalized_output"
+OUT_DIR = r"F:\CF"
 def prepare_length_data(gff_file):
     db_path = gff_file + ".db"
     if not os.path.exists(db_path):
