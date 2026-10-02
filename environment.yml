@@ -1,0 +1,28 @@
+name: eucommia-ncp
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python>=3.9
+  - pip
+  - r-base>=4.2
+  - r-wgcna
+  - r-reshape2
+  - r-dplyr
+  - r-stringr
+  - bioconductor-deseq2
+  - star
+  - fastp
+  - fastqc
+  - samtools
+  - subread
+  - pip:
+      - biopython>=1.79
+      - pandas>=1.5
+      - numpy>=1.23
+      - scipy>=1.9
+      - openpyxl>=3.0
+      - matplotlib>=3.6
+      - intervaltree>=3.1
+      - tqdm>=4.60

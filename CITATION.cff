@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+title: Eucommia ulmoides NCP workflow
+message: >-
+  If you use this workflow, please cite it using the metadata below.
+type: software
+authors:
+  - family-names: Yao
+    given-names: Mingwei
+version: v1.0.0
+date-released: "2026-10-02"
+license: MIT
+repository-code: "https://github.com/mingweiyao/Eucommia-NCP-workflow"
